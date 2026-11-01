@@ -1,0 +1,34 @@
+{
+  "version": 3,
+  "subprojectsDir": "subprojects",
+  "wrapsHash": "47c64d01e5bafb3c05d347481ba683b375ee6d91ebda1b370285399390de43f8",
+  "definitionHash": "add3f2f94d17639f9971a80c44f51f5dd910f70b1af74bd9354dad3221353fa0",
+  "setupArgs": [
+    "--force-fallback-for=zlib"
+  ],
+  "outputs": {
+    "targets": {
+      "update-fixture": {
+        "type": "executable",
+        "files": [
+          "bin/update-fixture"
+        ]
+      }
+    },
+    "files": [
+      "bin/update-fixture",
+      "include/zconf.h",
+      "include/zlib.h",
+      "lib/libz.so",
+      "lib/libz.so.1",
+      "lib/libz.so.1.3.1",
+      "lib/pkgconfig/zlib.pc"
+    ]
+  },
+  "installedWraps": [],
+  "wrapFiles": [
+    "zlib.wrap"
+  ],
+  "artifacts": [],
+  "contentHash": "d442dd3d950b48b5246a57d6cef0d2922b44c50c073a2fbfee43982ced625955"
+}

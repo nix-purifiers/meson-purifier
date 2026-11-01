@@ -1,80 +1,92 @@
 # SPDX-License-Identifier: MIT
 #
 # buildMesonProject: the sandboxed build of a Meson project, from the
-# lockfile `meson-purifier lock` writes next to meson.build.
+# lockfile `meson-purifier lock` writes. The flake publishes it as
+# `lib.meson-purifier.buildMesonProject`:
 #
-# The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The
-# meson-purifier overlay (`overlays.default`) adds it to the package set as
-# `buildMesonProject`, so a package written for callPackage takes it like
-# any other dependency:
-#
-#   { buildMesonProject }:
-#   buildMesonProject {
+#   lib.meson-purifier.buildMesonProject {
+#     pkgs = nixpkgs.legacyPackages.x86_64-linux;
 #     pname = "hello";
 #     version = "1.0";
 #     src = ./.;
 #   }
 #
-# The builder takes the arguments of stdenv.mkDerivation, and `lockFile`.
-# It adds meson, ninja and pkg-config to nativeBuildInputs and points
-# Meson's package cache (MESON_PACKAGE_CACHE_DIR) at the locked downloads.
-# The nixpkgs Meson setup hook configures with --wrap-mode=nodownload, so
-# every subproject comes from that cache. The `meson setup` arguments the
-# lock run was given (`meson-purifier lock . -- ARGS`) come before
-# `mesonFlags`.
+# It takes the arguments of stdenv.mkDerivation and these:
 #
-# The lockfile records what the project installs, so the result knows its
-# outputs without building:
+#   pkgs       the package set the build uses
+#   src        the project
+#   fetchers   fetchers in place of nixpkgs' own, such as a fetchurl with a
+#              mirror or credentials; they go to fetchEntry and tree of the
+#              purifier library
+#   lockFile   the lockfile; the default is meson-purifier.lock.json in
+#              `src`, and a lockfile given here replaces any copy in `src`,
+#              so a packaging flake can keep the lockfile of a project it
+#              does not change
 #
-#   targets.<name>    the installed files of the build target <name> of the
-#                     main project, as links into the one build, with
+# The build adds meson, ninja and pkg-config to nativeBuildInputs, points
+# Meson's package cache (MESON_PACKAGE_CACHE_DIR) at the locked downloads,
+# and passes the `meson setup` arguments of the lock run (`meson-purifier
+# lock . -- ARGS`) before `mesonFlags`. The nixpkgs Meson setup hook
+# configures with --wrap-mode=nodownload, so every subproject comes from
+# that cache.
+#
+# The result has, at evaluation time, from the lockfile:
+#
+#   packages.<name>   the installed files of each build target of the main
+#                     project, as links into one build, with
 #                     meta.mainProgram set for an executable
-#   lockedOutputs     the record in the lockfile: the type and files of each
-#                     target, and every installed file
+#   packages.all      that build: everything `meson install` installs
+#   tests             the build with `meson test` run in the sandbox
+#   release           the source release `meson dist` makes, which
+#                     `meson-purifier publish` uploads
+#   fetches           the download entries of the purifier library that
+#                     the build fetches: the `entries` of the lock in
+#                     memory, which readLock (read-lock.nix) reads from the
+#                     lockfile and the wrap files
+#   lockedOutputs     the outputs the lockfile records
+#   packageCache      the package cache the builds use
 #
-# After `meson install`, the build fails if a recorded file is missing,
-# which means the lockfile is older than the build definition.
+# After `meson install` the build fails if a file the lockfile records is
+# missing, which means the lockfile is older than the build definition.
+{ purifierLib, readLock }:
 {
-  lib,
-  stdenv,
-  meson,
-  ninja,
-  pkg-config,
-  runCommand,
   pkgs,
-  # lib.meson-purifier.packageCache, which the default package overlay
-  # passes.
-  packageCacheOf,
-}:
-{
   src,
-  # The lockfile; the default is the one `meson-purifier lock` writes.
+  fetchers ? { },
   lockFile ? src + "/meson-purifier.lock.json",
   ...
 }@args:
 let
-  packageCache = packageCacheOf { inherit pkgs lockFile; };
-  inherit (packageCache) lock;
+  inherit (pkgs)
+    lib
+    stdenv
+    meson
+    ninja
+    pkg-config
+    runCommand
+    git
+    ;
 
-  # The files of a source given as a path are readable during evaluation,
-  # so they are compared with the lockfile here. Wrap files that changed
-  # since the lock run mean a download may be missing, which fails the
-  # evaluation. A changed build definition leaves the downloads alone and
-  # only the recorded outputs may be out of date, which is a warning. A
-  # source that is not a path is checked at configure time, where a
-  # subproject missing from the package cache fails the build with a hint.
-  hashes = import ./inputs-hash.nix {
-    project = src;
-    inherit (lock) subprojectsDir;
-    installed = map (entry: entry.path) lock.installedWraps;
+  # The lock in memory of the purifier contract. checkLock fails the
+  # evaluation with its problems: a stale, tampered, malformed or
+  # incomplete lockfile, or wrap files that changed since the lock run,
+  # which means a download may be missing. A source that a derivation
+  # builds cannot be compared at evaluation; there a subproject missing
+  # from the package cache fails the build at configure time, with a hint.
+  lock = purifierLib.checkLock (readLock {
+    inherit src lockFile;
+  });
+  inherit (lock.meson) subprojectsDir installedWraps;
+
+  packageCache = pkgs.callPackage ./package-cache.nix {
+    inherit purifierLib fetchers;
+    entries = purifierLib.entriesFor stdenv.hostPlatform.system lock;
   };
-  freshWraps =
-    !(builtins.isPath src)
-    || hashes.wraps == lock.wrapsHash
-    || throw "meson-purifier: the wrap files of ${toString src} changed since its lockfile was written, so it may lack a download. Run `meson-purifier lock`.";
+
+  # A changed build definition leaves the downloads alone and only the
+  # recorded outputs may be out of date, which is a warning.
   checkDefinition =
-    if !(builtins.isPath src) || hashes.definition == lock.definitionHash then
+    if lock.meson.definitionFresh then
       lib.id
     else
       lib.warn "meson-purifier: the meson.build files of ${toString src} changed since its lockfile was written, so the targets it records may be out of date. Run `meson-purifier lock`.";
@@ -90,18 +102,18 @@ let
     done
   '';
 
-  subprojectsDir = lib.escapeShellArg lock.subprojectsDir;
+  subprojects = lib.escapeShellArg subprojectsDir;
 
   # The wraps Meson would install from wrapdb.json at configure time.
   installWraps = lib.concatMapStrings (entry: ''
-    if [ ! -e ${subprojectsDir}/${lib.escapeShellArg entry.path} ]; then
-      cp ${packageCache}/wrapdb-wraps/${lib.escapeShellArg entry.path} ${subprojectsDir}/
-      chmod u+w ${subprojectsDir}/${lib.escapeShellArg entry.path}
+    if [ ! -e ${subprojects}/${lib.escapeShellArg entry.path} ]; then
+      cp ${packageCache}/wrapdb-wraps/${lib.escapeShellArg entry.path} ${subprojects}/
+      chmod u+w ${subprojects}/${lib.escapeShellArg entry.path}
     fi
-  '') lock.installedWraps;
+  '') installedWraps;
 
   checkOutputs = ''
-    for file in ${lib.escapeShellArgs lock.outputs.files}; do
+    for file in ${lib.escapeShellArgs lock.meson.files}; do
       if [ ! -e "$out/$file" ] && [ ! -L "$out/$file" ]; then
         echo "meson-purifier: the lockfile records $file, which meson install did not install. Run \`meson-purifier lock\`." >&2
         exit 1
@@ -109,26 +121,68 @@ let
     done
   '';
 
-  package = stdenv.mkDerivation (
-    builtins.removeAttrs args [ "lockFile" ]
+  derivationArgs = builtins.removeAttrs args [
+    "pkgs"
+    "fetchers"
+    "lockFile"
+  ];
+
+  common = derivationArgs // {
+    nativeBuildInputs = [
+      meson
+      ninja
+      pkg-config
+    ]
+    ++ args.nativeBuildInputs or [ ];
+    mesonFlags = lock.meson.setupArgs ++ args.mesonFlags or [ ];
+    preConfigure = installWraps + args.preConfigure or "";
+    failureHook = missingSubprojectHint + args.failureHook or "";
+    env = args.env or { } // {
+      MESON_PACKAGE_CACHE_DIR = "${packageCache}/cache";
+    };
+  };
+
+  all = stdenv.mkDerivation (
+    common
     // {
-      nativeBuildInputs = [
-        meson
-        ninja
-        pkg-config
-      ]
-      ++ args.nativeBuildInputs or [ ];
-      mesonFlags = lock.setupArgs ++ args.mesonFlags or [ ];
-      preConfigure = installWraps + args.preConfigure or "";
       postInstall = args.postInstall or "" + checkOutputs;
-      failureHook = missingSubprojectHint + args.failureHook or "";
-      env = args.env or { } // {
-        MESON_PACKAGE_CACHE_DIR = "${packageCache}/cache";
-      };
-      passthru = args.passthru or { } // {
-        inherit packageCache lock targets;
-        lockedOutputs = lock.outputs;
-      };
+    }
+  );
+
+  tests = all.overrideAttrs (old: {
+    pname = "${old.pname}-tests";
+    doCheck = true;
+  });
+
+  # `meson dist` packs the project from its git repository, so the source
+  # becomes a repository of one commit with a fixed date first.
+  release = stdenv.mkDerivation (
+    common
+    // {
+      pname = "${all.pname}-release";
+      nativeBuildInputs = common.nativeBuildInputs ++ [ git ];
+      dontConfigure = true;
+      doCheck = false;
+      buildPhase = ''
+        runHook preBuild
+        runHook preConfigure
+        export GIT_AUTHOR_DATE=1970-01-01T00:00:01+00:00 GIT_COMMITTER_DATE=1970-01-01T00:00:01+00:00
+        export HOME="$TMPDIR"
+        git init -q
+        git add -A
+        git -c user.name=meson-purifier -c user.email=meson-purifier@localhost commit -q -m release
+        flagsArray=()
+        concatTo flagsArray mesonFlags mesonFlagsArray
+        meson setup release-build --wrap-mode=nodownload "''${flagsArray[@]}"
+        meson dist -C release-build --no-tests --formats xztar
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        mkdir -p "$out"
+        cp release-build/meson-dist/* "$out"/
+        runHook postInstall
+      '';
     }
   );
 
@@ -136,7 +190,7 @@ let
     name: target:
     runCommand name
       {
-        passthru = { inherit package; };
+        passthru.package = all;
         meta =
           lib.optionalAttrs (target.type == "executable" && target.files != [ ]) {
             mainProgram = baseNameOf (builtins.head target.files);
@@ -148,11 +202,27 @@ let
       (
         lib.concatMapStrings (file: ''
           mkdir -p "$out"/${lib.escapeShellArg (dirOf file)}
-          ln -s ${package}/${lib.escapeShellArg file} "$out"/${lib.escapeShellArg file}
+          ln -s ${all}/${lib.escapeShellArg file} "$out"/${lib.escapeShellArg file}
         '') target.files
       );
 
-  targets = lib.mapAttrs mkTarget lock.outputs.targets;
+  targets = lib.mapAttrs mkTarget lock.outputs;
 in
-assert freshWraps;
-checkDefinition package
+assert
+  !(targets ? all)
+  || throw "meson-purifier: the project has an installed target named `all`, which is the name of packages.all";
+checkDefinition {
+  packages = targets // {
+    inherit all;
+  };
+  inherit
+    tests
+    release
+    packageCache
+    ;
+  fetches = lock.entries;
+  lockedOutputs = {
+    targets = lock.outputs;
+    inherit (lock.meson) files;
+  };
+}

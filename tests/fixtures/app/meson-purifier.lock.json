@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "subprojectsDir": "subprojects",
   "wrapsHash": "bb3937094c035b179a85159f24efc64d2633bbf8993b0b0be983aca4e6ac2ca0",
   "definitionHash": "3301913da7b44e53cff4d8922bc7e8c76cb2be4167fae2f2996bdfdf8512035a",
@@ -64,6 +64,10 @@
       "hash": "sha256-m974d8ZZRqdJzKJtcULAYbtEWKfCgA0VR8aFLS+evVM="
     }
   ],
+  "wrapFiles": [
+    "tinyexpr.wrap",
+    "zlib.wrap"
+  ],
   "artifacts": [
     {
       "path": "cJSON-1.7.19.tar.gz",
@@ -116,32 +120,11 @@
       "hash": "sha256-iOopNkwCMeyP11uJHwW6Bd8y9Fd6FiywjdQLP1xVMiU="
     },
     {
-      "path": "tinyexpr-ba2e32bbcc2d1e644a7e132d24c2f542821cabe0.tar.gz",
-      "url": "https://github.com/codeplea/tinyexpr/archive/ba2e32bbcc2d1e644a7e132d24c2f542821cabe0.tar.gz",
-      "mirrors": [],
-      "hash": "sha256-4wIPT2JauEb0rZrfBTXkV6yDDruhqWDv7Z1OXM/fkEU="
-    },
-    {
       "path": "yaml-0.2.5.tar.gz",
       "url": "https://pyyaml.org/download/libyaml/yaml-0.2.5.tar.gz",
       "mirrors": [],
       "hash": "sha256-xkKum3X+4SCy2WxxJTi9LPKDIo0jN98s8piOPAJnjvQ="
-    },
-    {
-      "path": "zlib-1.3.2.tar.xz",
-      "url": "https://zlib.net/zlib-1.3.2.tar.xz",
-      "mirrors": [
-        "https://wrapdb.mesonbuild.com/v2/zlib_1.3.2-1/get_source/zlib-1.3.2.tar.xz"
-      ],
-      "hash": "sha256-16BlR4Ok2lKdG7eTt62cMxgCCvd2Z7yuNfldDkKnkvM="
-    },
-    {
-      "path": "zlib_1.3.2-1_patch.zip",
-      "url": "https://wrapdb.mesonbuild.com/v2/zlib_1.3.2-1/get_patch",
-      "mirrors": [
-        "https://github.com/mesonbuild/wrapdb/releases/download/zlib_1.3.2-1/zlib_1.3.2-1_patch.zip"
-      ],
-      "hash": "sha256-Wuei6S+CPfEYz7jBsj2U4xF4ZDkrNEZYHWaQSbL7pt0="
     }
-  ]
+  ],
+  "contentHash": "080f5c4cc1d837d6343b433064f5276794870358e2a813390ca5de9d6d3ff180"
 }

@@ -23,7 +23,7 @@ import urllib.parse
 from pathlib import Path
 
 LOCK_NAME = "meson-purifier.lock.json"
-LOCK_VERSION = 2
+LOCK_VERSION = 3
 # Where interactive commands keep the GC root of the realized package cache,
 # relative to the project root.
 STATE_DIR = ".meson-purifier"
@@ -66,17 +66,17 @@ def sri_from_hex(hexdigest: str) -> str:
 
 
 def store_name(path: str) -> str:
-    """A store path name for a cache path; nix/lib/lock.nix has the same rule.
+    """A store path name for a cache path, by the rule of storeName in
+    nix/lib/entries.nix of the purifier library, which names the downloads
+    of the builds; the lock run and the builds then share store paths.
 
     Store path names allow [A-Za-z0-9+._?=-], must not start with a dot, and
     are at most 211 characters. Every other character becomes "_", and a
-    long name keeps its end.
+    long name keeps its start.
     """
     replaced = re.sub(r"[^A-Za-z0-9+._?=-]", "_", path)
-    if len(replaced) > 200:
-        replaced = replaced[-200:]
     undotted = replaced.lstrip(".")
-    return undotted or "file"
+    return (undotted or "download")[:200]
 
 
 def subprojects_dir_of(project: Path) -> str:
@@ -353,17 +353,28 @@ def fetch_svn(url: str, revision: str, into: Path, work: Path) -> tuple:
 # The lock run
 
 
-def lock_wrap(wrap, cache: Path, work: Path, artifacts: dict) -> None:
+def lock_wrap(wrap, cache: Path, work: Path, artifacts: dict, wrap_file=None) -> None:
     """Fetches what one wrap names into the lock run's package cache, and
-    records it."""
+    records it.
+
+    `wrap_file` names a wrap file of the project whose archives Nix reads
+    from the wrap file itself (nix/lib/wrap-file.nix); their entries carry
+    it as `wrapFile`, and the lockfile lists the wrap file instead of them.
+    """
     from mesonbuild.wrap.wrap import WrapType
 
     def add(entry: dict) -> None:
         previous = artifacts.get(entry["path"])
-        if previous is not None and previous != entry:
-            raise PurifierError(
-                f"two wraps put different files at {entry['path']} in the package cache"
-            )
+        if previous is not None:
+            same = {k: v for k, v in previous.items() if k != "wrapFile"} == entry
+            if not same:
+                raise PurifierError(
+                    f"two wraps put different files at {entry['path']} in the package cache"
+                )
+            if "wrapFile" in previous:
+                return
+        if wrap_file is not None:
+            entry = {**entry, "wrapFile": wrap_file}
         artifacts[entry["path"]] = entry
 
     values = wrap.values
@@ -559,6 +570,36 @@ def configure_copy(
     return installed, outputs_of(build, prefix)
 
 
+# Set by `lock --record-all`: the lockfile records the archives of every
+# wrap, for a build whose source a derivation builds, where Nix cannot read
+# the wrap files at evaluation.
+RECORD_ALL = False
+
+
+def derivable(project: Path, root: Path, wrap):
+    """The name of the wrap file of `wrap`, if Nix can read the archives of
+    the wrap from the wrap file instead of the lockfile.
+
+    That holds for a [wrap-file] wrap that lies in the subproject directory
+    of the project: a wrap file names its archives with URLs and SHA-256
+    hashes, and the build reads it from its source at evaluation. The
+    lockfile records the archives of every other wrap: a wrap inside a
+    downloaded archive or a patch directory, and a wrap that Meson installs
+    from wrapdb.json at configure time.
+    """
+    from mesonbuild.wrap.wrap import WrapType
+
+    if RECORD_ALL or wrap.type is not WrapType.FILE or wrap.redirected:
+        return None
+    path = Path(wrap.original_filename)
+    subprojects_dir = subprojects_dir_of(project)
+    if path.parent != root / subprojects_dir:
+        return None
+    if not (project / subprojects_dir / path.name).is_file():
+        return None
+    return path.name
+
+
 def lock(project: Path, setup_args: list) -> dict:
     from mesonbuild.wrap import WrapMode
     from mesonbuild.wrap.wrap import PackageDefinition, Resolver
@@ -608,7 +649,13 @@ def lock(project: Path, setup_args: list) -> dict:
                         # wrap.
                         continue
                     log(f"locking {wrap.name}")
-                    lock_wrap(wrap, cache, work, artifacts)
+                    lock_wrap(
+                        wrap,
+                        cache,
+                        work,
+                        artifacts,
+                        wrap_file=derivable(project, root, wrap),
+                    )
                     # Meson extracts the subproject from the lock run's cache
                     # and applies the wrap's patches, so that the wraps the
                     # subproject carries become visible.
@@ -647,7 +694,18 @@ def lock(project: Path, setup_args: list) -> dict:
             "setupArgs": setup_args,
             "outputs": outputs,
             "installedWraps": installed,
-            "artifacts": [artifacts[path] for path in sorted(artifacts)],
+            "wrapFiles": sorted(
+                {
+                    entry["wrapFile"]
+                    for entry in artifacts.values()
+                    if "wrapFile" in entry
+                }
+            ),
+            "artifacts": [
+                artifacts[path]
+                for path in sorted(artifacts)
+                if "wrapFile" not in artifacts[path]
+            ],
         }
     finally:
         if saved_cache is None:
@@ -660,10 +718,38 @@ def lock(project: Path, setup_args: list) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def content_hash(data: dict) -> str:
+    """The hash of a lockfile's content, which the lockfile records as
+    `contentHash`; nix/lib/lock.nix has the same rule.
+
+    It is the SHA-256 of the lockfile without `contentHash`, as compact JSON
+    with sorted keys, which is what Nix's builtins.toJSON writes.
+    """
+    rest = {key: value for key, value in data.items() if key != "contentHash"}
+    text = json.dumps(rest, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+# The lockfile that --lockfile or MESON_PURIFIER_LOCKFILE names, for a
+# lockfile kept outside the project; None means the one next to meson.build.
+LOCKFILE: "Path | None" = None
+
+
+def lock_path(project: Path) -> Path:
+    return LOCKFILE if LOCKFILE is not None else project / LOCK_NAME
+
+
 def write_lock(project: Path, data: dict) -> None:
+    data = {key: value for key, value in data.items() if key != "contentHash"}
+    data["contentHash"] = content_hash(data)
     text = json.dumps(data, indent=2) + "\n"
-    (project / LOCK_NAME).write_text(text)
-    log(f"wrote {project / LOCK_NAME} with {len(data.get('artifacts', []))} downloads")
+    path = lock_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    log(
+        f"wrote {path} with {len(data.get('artifacts', []))} downloads; Nix reads the "
+        f"archives of {len(data.get('wrapFiles', []))} wrap files from the wrap files"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -671,13 +757,24 @@ def write_lock(project: Path, data: dict) -> None:
 
 
 def find_project(start: Path) -> Path:
-    """The nearest directory at or above `start` with a lockfile."""
+    """The project at or above `start`: the nearest directory with a
+    lockfile, or, with a lockfile kept outside the project, the nearest
+    directory whose meson.build calls project()."""
     for directory in [start, *start.parents]:
-        if (directory / LOCK_NAME).is_file():
-            return directory
-    raise PurifierError(
-        f"no {LOCK_NAME} in {start} or above it; run `meson-purifier lock`"
-    )
+        if LOCKFILE is None:
+            if (directory / LOCK_NAME).is_file():
+                return directory
+        else:
+            build = directory / "meson.build"
+            if build.is_file() and re.search(
+                r"^\s*project\s*\(", build.read_text(errors="replace"), re.MULTILINE
+            ):
+                return directory
+    if LOCKFILE is None:
+        raise PurifierError(
+            f"no {LOCK_NAME} in {start} or above it; run `meson-purifier lock`"
+        )
+    raise PurifierError(f"no Meson project at or above {start}")
 
 
 def installed_names(entries: list) -> frozenset:
@@ -691,13 +788,15 @@ LOCK_FIELDS = (
     "setupArgs",
     "outputs",
     "installedWraps",
+    "wrapFiles",
     "artifacts",
+    "contentHash",
 )
 
 
 def read_lock(project: Path) -> dict:
     """The lockfile of the project, with its format checked."""
-    path = project / LOCK_NAME
+    path = lock_path(project)
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as e:
@@ -715,6 +814,11 @@ def read_lock(project: Path) -> dict:
     if missing:
         raise PurifierError(
             f"{path} lacks {', '.join(missing)}; run `meson-purifier lock` to write it again"
+        )
+    if content_hash(data) != data["contentHash"]:
+        raise PurifierError(
+            f"{path} differs from what `meson-purifier lock` wrote (its contentHash does not "
+            "match): it was edited by hand. Run `meson-purifier lock` to write it again."
         )
     return data
 
@@ -736,9 +840,15 @@ def check_fresh(project: Path) -> dict:
     return data
 
 
-def realize(project: Path) -> Path:
+def prefetch(project: Path) -> Path:
     """Builds the package cache of the lockfile, with a GC root in the
-    project, and returns its store path."""
+    project, and returns its store path.
+
+    The package cache is everything day-to-day work needs from the network:
+    Meson, ninja and the compilers come from the Nix store already, and
+    clangd reads the build directory, whose headers Meson extracts from the
+    package cache.
+    """
     if not (NIX_LIB and NIXPKGS and LIBRARY):
         raise PurifierError(
             "MESON_PURIFIER_NIX_LIB, MESON_PURIFIER_NIXPKGS and MESON_PURIFIER_LIBRARY "
@@ -758,7 +868,10 @@ def realize(project: Path) -> Path:
                 f"{NIX_LIB}/interactive.nix",
                 "--arg",
                 "lockFile",
-                str((project / LOCK_NAME).resolve()),
+                str(lock_path(project).resolve()),
+                "--argstr",
+                "projectDir",
+                str(project.resolve()),
                 "--arg",
                 "nixpkgs",
                 NIXPKGS,
@@ -792,7 +905,7 @@ def install_wrapdb_wraps(project: Path, data: dict, state: Path) -> None:
 
 def meson_env(project: Path) -> dict:
     data = check_fresh(project)
-    state = realize(project)
+    state = prefetch(project)
     install_wrapdb_wraps(project, data, state)
     return dict(os.environ, MESON_PACKAGE_CACHE_DIR=str(state / "cache"))
 
@@ -884,7 +997,99 @@ def run_meson(args: list) -> int:
     return result.returncode
 
 
+def release_files(paths: list) -> list:
+    """The files of the store paths a release build printed: a file as it
+    is, and the files directly inside a directory."""
+    files = []
+    for path in map(Path, paths):
+        if path.is_dir():
+            files += sorted(p for p in path.iterdir() if p.is_file())
+        else:
+            files.append(path)
+    return files
+
+
+def publish(tag: str, installable: str, repo, dry_run: bool) -> None:
+    """Builds the release with Nix and uploads its files to the GitHub
+    release `tag`, which it creates when it does not exist."""
+    out = run(
+        ["nix", "build", "--no-link", "--print-out-paths", installable],
+        stdout=subprocess.PIPE,
+        text=True,
+    ).stdout.split()
+    files = release_files(out)
+    if not files:
+        raise PurifierError(f"{installable} built no files to publish")
+    repo_args = ["--repo", repo] if repo else []
+    exists = (
+        subprocess.run(
+            ["gh", "release", "view", tag, *repo_args],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+        if not dry_run
+        else False
+    )
+    if exists:
+        command = [
+            "gh",
+            "release",
+            "upload",
+            tag,
+            *map(str, files),
+            "--clobber",
+            *repo_args,
+        ]
+    else:
+        command = [
+            "gh",
+            "release",
+            "create",
+            tag,
+            *map(str, files),
+            "--title",
+            tag,
+            *repo_args,
+        ]
+    if dry_run:
+        print(" ".join(command))
+        return
+    run(command)
+    log(f"published {', '.join(f.name for f in files)} to the release {tag}")
+
+
+def update(project: Path, names: list) -> None:
+    """Updates the wraps from WrapDB with `meson wrap update`, all of them
+    or the named ones, and locks the project again with the `meson setup`
+    arguments of its lockfile."""
+    try:
+        setup_args = json.loads(lock_path(project).read_text())["setupArgs"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise PurifierError(
+            f"{lock_path(project)} holds no setupArgs to lock with again ({e}); "
+            "run `meson-purifier lock . -- ARGS`"
+        ) from e
+    run([real_meson(), "wrap", "update", *names], cwd=project)
+    write_lock(project, lock(project, setup_args))
+
+
 def main(argv: list) -> int:
+    global LOCKFILE, RECORD_ALL
+    # --lockfile comes before the command or after it; the toolchain's meson,
+    # whose arguments all belong to meson, reads MESON_PURIFIER_LOCKFILE.
+    if os.environ.get("MESON_PURIFIER_LOCKFILE"):
+        LOCKFILE = Path(os.environ["MESON_PURIFIER_LOCKFILE"]).resolve()
+    while argv and (argv[0] == "--lockfile" or argv[0].startswith("--lockfile=")):
+        if argv[0] == "--lockfile":
+            if len(argv) < 2:
+                log("--lockfile needs a path")
+                return 2
+            LOCKFILE = Path(argv[1]).resolve()
+            argv = argv[2:]
+        else:
+            LOCKFILE = Path(argv[0].split("=", 1)[1]).resolve()
+            argv = argv[1:]
     # Every argument after `meson` belongs to meson, including the ones that
     # look like options of this command.
     if argv and argv[0] == "meson":
@@ -893,8 +1098,25 @@ def main(argv: list) -> int:
         prog="meson-purifier",
         description="Nix as the download backend of Meson subprojects.",
     )
+    lockfile_option = argparse.ArgumentParser(add_help=False)
+    lockfile_option.add_argument(
+        "--lockfile",
+        help=f"the lockfile, when it lives outside the project (default: {LOCK_NAME} "
+        "next to meson.build)",
+    )
+    record_all_option = argparse.ArgumentParser(add_help=False)
+    record_all_option.add_argument(
+        "--record-all",
+        action="store_true",
+        help="record the archives of every wrap, for a build whose source a derivation "
+        "builds, where Nix cannot read the wrap files at evaluation",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
-    p_lock = sub.add_parser("lock", help=f"write {LOCK_NAME} for the project")
+    p_lock = sub.add_parser(
+        "lock",
+        help=f"write {LOCK_NAME} for the project",
+        parents=[lockfile_option, record_all_option],
+    )
     p_lock.add_argument("project", nargs="?", default=".")
     p_lock.add_argument(
         "setup_args",
@@ -902,27 +1124,66 @@ def main(argv: list) -> int:
         help="after --: arguments for `meson setup` when the lock run configures the "
         "project to find its outputs and the wraps wrapdb.json installs",
     )
-    p_realize = sub.add_parser(
-        "realize", help="build the package cache and print its path"
+    p_update = sub.add_parser(
+        "update",
+        help="update the wraps with `meson wrap update`, all of them or the named ones, "
+        f"and write {LOCK_NAME} again",
+        parents=[lockfile_option, record_all_option],
     )
-    p_realize.add_argument("project", nargs="?", default=".")
+    p_update.add_argument("wraps", nargs="*", help="the wraps to update (default: all)")
+    p_prefetch = sub.add_parser(
+        "prefetch",
+        help="build everything day-to-day work downloads, with a GC root in the project, "
+        "and print its path",
+        parents=[lockfile_option],
+    )
+    p_prefetch.add_argument("project", nargs="?", default=".")
+    # publish builds the release from the Nix expression, which names its
+    # lockfile itself; it takes --lockfile like every command, for scripts
+    # that pass it to all of them.
+    p_publish = sub.add_parser(
+        "publish",
+        help="upload the release Nix builds to a GitHub release",
+        parents=[lockfile_option],
+    )
+    p_publish.add_argument("tag", help="the tag of the GitHub release")
+    p_publish.add_argument(
+        "--installable",
+        default=".#release",
+        help="the Nix installable of the release (default: .#release)",
+    )
+    p_publish.add_argument("--repo", help="the GitHub repository, OWNER/NAME")
+    p_publish.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="build, and print the upload command only",
+    )
     p_download = sub.add_parser(
-        "download", help="extract every locked subproject into the subproject directory"
+        "download",
+        help="extract every locked subproject into the subproject directory",
+        parents=[lockfile_option],
     )
     p_download.add_argument("project", nargs="?", default=".")
     sub.add_parser(
         "meson", help="run meson with the locked package cache", add_help=False
     )
     args = parser.parse_args(argv)
+    if getattr(args, "lockfile", None):
+        LOCKFILE = Path(args.lockfile).resolve()
+    RECORD_ALL = getattr(args, "record_all", False)
 
     try:
         if args.command == "lock":
             project = Path(args.project).resolve()
             write_lock(project, lock(project, args.setup_args))
-        elif args.command == "realize":
+        elif args.command == "update":
+            update(find_project(Path.cwd()), args.wraps)
+        elif args.command == "prefetch":
             project = find_project(Path(args.project).resolve())
             check_fresh(project)
-            print(realize(project))
+            print(prefetch(project))
+        elif args.command == "publish":
+            publish(args.tag, args.installable, args.repo, args.dry_run)
         elif args.command == "download":
             project = find_project(Path(args.project).resolve())
             env = meson_env(project)

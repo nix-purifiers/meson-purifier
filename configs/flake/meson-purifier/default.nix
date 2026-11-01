@@ -65,6 +65,7 @@
             checks = import ../../../tests {
               inherit pkgs;
               overlay = self.overlays.default;
+              mesonPurifier = self.lib.meson-purifier;
             };
             treefmt.programs.nixfmt.enable = true;
             treefmt.programs.ruff-format.enable = true;

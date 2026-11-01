@@ -42,7 +42,7 @@ class Helpers(unittest.TestCase):
         self.assertEqual(mp.store_name("zlib-1.3.2.tar.xz"), "zlib-1.3.2.tar.xz")
         self.assertEqual(mp.store_name("a b/c"), "a_b_c")
         self.assertEqual(mp.store_name(".hidden"), "hidden")
-        self.assertEqual(mp.store_name("..."), "file")
+        self.assertEqual(mp.store_name("..."), "download")
         self.assertEqual(mp.store_name("x" * 250), "x" * 200)
 
     def test_subprojects_dir_of(self):
@@ -180,6 +180,7 @@ def lockfile(project: Path, **fields) -> dict:
         "setupArgs": [],
         "outputs": {"targets": {}, "files": []},
         "installedWraps": [],
+        "wrapFiles": [],
         "artifacts": [],
     }
     data.update(fields)
@@ -194,10 +195,51 @@ class Lockfile(unittest.TestCase):
             write(project / "meson.build", "project('p')\n")
             lock = lockfile(project)
             mp.write_lock(project, lock)
-            self.assertEqual(mp.check_fresh(project), lock)
+            read = mp.check_fresh(project)
+            self.assertEqual(read["contentHash"], mp.content_hash(lock))
+            del read["contentHash"]
+            self.assertEqual(read, lock)
             # An edited build definition leaves the downloads current.
             write(project / "meson.build", "project('p', 'c')\n")
-            self.assertEqual(mp.check_fresh(project), lock)
+            mp.check_fresh(project)
+
+    def test_hand_edited_lockfile(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            mp.write_lock(project, lockfile(project))
+            path = project / mp.LOCK_NAME
+            path.write_text(
+                path.read_text().replace('"setupArgs": []', '"setupArgs": ["-Dx=y"]')
+            )
+            with self.assertRaisesRegex(mp.PurifierError, "edited by hand"):
+                mp.read_lock(project)
+
+    def test_content_hash_matches_nix_to_json(self):
+        # builtins.toJSON writes compact JSON with sorted keys and keeps
+        # non-ASCII characters as they are.
+        data = {"b": [1, {"y": None, "x": True}], "a": 'é/"', "contentHash": "ignored"}
+        self.assertEqual(
+            mp.content_hash(data),
+            hashlib.sha256(
+                '{"a":"é/\\"","b":[1,{"x":true,"y":null}]}'.encode()
+            ).hexdigest(),
+        )
+
+    def test_lockfile_outside_the_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d) / "project"
+            write(project / "meson.build", "project('p', 'c')\n")
+            write(project / "src" / "meson.build", "executable('x', 'x.c')\n")
+            outside = Path(d) / "locks" / "p.lock.json"
+            mp.LOCKFILE = outside
+            try:
+                self.assertEqual(mp.find_project(project / "src"), project)
+                mp.write_lock(project, lockfile(project))
+                self.assertTrue(outside.is_file())
+                self.assertFalse((project / mp.LOCK_NAME).exists())
+                mp.check_fresh(project)
+            finally:
+                mp.LOCKFILE = None
 
     def test_stale_lockfile(self):
         with tempfile.TemporaryDirectory() as d:
@@ -415,13 +457,17 @@ class LockRun(unittest.TestCase):
                 mock.patch.object(
                     mp,
                     "lock_wrap",
-                    lambda wrap, cache, work, artifacts: seen.append(wrap.name),
+                    lambda wrap, cache, work, artifacts, wrap_file=None: seen.append(
+                        (wrap.name, wrap_file)
+                    ),
                 ),
                 mock.patch.object(mp, "configure_copy", lambda *args: ([], outputs)),
             ):
                 lock = mp.lock(project, ["-Dx=y"])
 
-            self.assertEqual(sorted(seen), ["a", "b"])
+            # a lies in the subproject directory, so Nix reads its archives
+            # from a.wrap; b lies in the patch directory of a.
+            self.assertEqual(sorted(seen), [("a", "a.wrap"), ("b", None)])
             self.assertEqual(lock["artifacts"], [])
             self.assertEqual(lock["outputs"], outputs)
             self.assertEqual(lock["setupArgs"], ["-Dx=y"])
@@ -431,6 +477,64 @@ class LockRun(unittest.TestCase):
             )
             # The lock run extracts subprojects in a copy, not in the project.
             self.assertFalse((subprojects / "a-1.0").exists())
+
+    def test_wrap_files_replace_their_entries(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d) / "project"
+            write(project / "meson.build", "project('p', 'c')\n")
+            a_hash = tarball(
+                project / "subprojects" / "packagefiles" / "a.tar.gz",
+                "a",
+                {"meson.build": "project('a', 'c')\n"},
+            )
+            write(
+                project / "subprojects" / "a.wrap",
+                f"[wrap-file]\ndirectory = a\nsource_filename = a.tar.gz\nsource_hash = {a_hash}\n",
+            )
+
+            def lock_wrap(wrap, cache, work, artifacts, wrap_file=None):
+                entry = {"path": "a.tar.gz", "url": "https://a/a.tar.gz", "mirrors": []}
+                if wrap_file is not None:
+                    entry["wrapFile"] = wrap_file
+                artifacts[entry["path"]] = entry
+
+            outputs = {"targets": {}, "files": []}
+            with (
+                mock.patch.object(mp, "lock_wrap", lock_wrap),
+                mock.patch.object(mp, "configure_copy", lambda *args: ([], outputs)),
+            ):
+                lock = mp.lock(project, [])
+                self.assertEqual(lock["wrapFiles"], ["a.wrap"])
+                self.assertEqual(lock["artifacts"], [])
+                mp.RECORD_ALL = True
+                try:
+                    lock = mp.lock(project, [])
+                finally:
+                    mp.RECORD_ALL = False
+                self.assertEqual(lock["wrapFiles"], [])
+                self.assertEqual([e["path"] for e in lock["artifacts"]], ["a.tar.gz"])
+
+    def test_update(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            mp.write_lock(project, lockfile(project, setupArgs=["-Dx=y"]))
+            calls = []
+            with (
+                mock.patch.object(
+                    mp, "run", lambda args, **kw: calls.append((args, kw))
+                ),
+                mock.patch.object(mp, "real_meson", lambda: "meson"),
+                mock.patch.object(
+                    mp,
+                    "lock",
+                    lambda project, setup_args: lockfile(project, setupArgs=setup_args),
+                ),
+            ):
+                mp.update(project, ["zlib"])
+            self.assertEqual(
+                calls, [(["meson", "wrap", "update", "zlib"], {"cwd": project})]
+            )
+            self.assertEqual(mp.read_lock(project)["setupArgs"], ["-Dx=y"])
 
 
 if __name__ == "__main__":

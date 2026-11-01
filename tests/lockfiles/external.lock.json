@@ -1,0 +1,54 @@
+{
+  "version": 3,
+  "subprojectsDir": "subprojects",
+  "wrapsHash": "ca8a720c755d04584a4ff9502e1f6e4b9d2e0e65c659ec1274f5e66829d7ba56",
+  "definitionHash": "84bac40e3c4e21f495120f0c05b88514f56fb54c8120475967077888650cd903",
+  "setupArgs": [
+    "--force-fallback-for=zlib,inih"
+  ],
+  "outputs": {
+    "targets": {
+      "external-fixture": {
+        "type": "executable",
+        "files": [
+          "bin/external-fixture"
+        ]
+      }
+    },
+    "files": [
+      "bin/external-fixture",
+      "include/INIReader.h",
+      "include/ini.h",
+      "include/zconf.h",
+      "include/zlib.h",
+      "lib/libINIReader.so",
+      "lib/libINIReader.so.0",
+      "lib/libinih.so",
+      "lib/libinih.so.0",
+      "lib/libz.so",
+      "lib/libz.so.1",
+      "lib/libz.so.1.3.2",
+      "lib/pkgconfig/INIReader.pc",
+      "lib/pkgconfig/inih.pc",
+      "lib/pkgconfig/zlib.pc"
+    ]
+  },
+  "installedWraps": [],
+  "wrapFiles": [
+    "zlib.wrap"
+  ],
+  "artifacts": [
+    {
+      "path": "inih",
+      "git": {
+        "url": "https://github.com/benhoyt/inih.git",
+        "rev": "26254ee9de7681f8825433415443e7116ff24b98",
+        "submodules": false,
+        "leaveDotGit": false,
+        "commitObject": null
+      },
+      "hash": "sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="
+    }
+  ],
+  "contentHash": "7f487dba794945815ee1ed37d2495ded7963360f58c588bc3a10b5f0f0c9bc18"
+}

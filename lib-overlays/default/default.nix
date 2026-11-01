@@ -2,25 +2,24 @@
 #
 # The `meson-purifier` library namespace.
 #
-#   packageCache { pkgs, lockFile }
-#     The package cache of a lockfile (nix/lib/package-cache.nix), laid out
-#     with `lib.purifier`, the shared library of the nix-purifiers. The
-#     interactive commands of the meson-purifier command build it through
-#     this flake; `lockFile` may be an absolute path as a string.
-#
-# The builder needs a package set, so it is the package `buildMesonProject`
-# that the default package overlay adds.
+#   readLock { src, lockFile ? ... }
+#     The lockfile and the wrap files of a project, read into the lock in
+#     memory of the purifier contract (nix/lib/read-lock.nix).
+#   buildMesonProject { pkgs, src, fetchers ? { }, lockFile ? ..., ... }
+#     The sandboxed build of a Meson project from its lockfile
+#     (nix/lib/build-meson-project.nix documents its arguments and result).
+#     It lays the downloads out with `lib.purifier`, the shared library of
+#     the nix-purifiers.
 { ... }:
 {
 
   overlay = final: prev: {
-    meson-purifier = prev.meson-purifier or { } // {
-      packageCache =
-        { pkgs, lockFile }:
-        pkgs.callPackage ../../nix/lib/package-cache.nix {
-          inherit lockFile;
-          purifierLib = final.purifier;
-        };
+    meson-purifier = prev.meson-purifier or { } // rec {
+      readLock = import ../../nix/lib/read-lock.nix { lib = final; };
+      buildMesonProject = import ../../nix/lib/build-meson-project.nix {
+        purifierLib = final.purifier;
+        inherit readLock;
+      };
     };
   };
 

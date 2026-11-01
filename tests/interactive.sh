@@ -51,16 +51,15 @@ online() {
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 }
 
-# A tampered hash fails the build of the package cache with Nix's hash
-# mismatch, which needs the download and so the network.
+# A hash changed by hand no longer matches the contentHash of the lockfile.
 copy tampered
-sed -i 's|"sha256-16BlR4Ok2lKdG7eTt62cMxgCCvd2Z7yuNfldDkKnkvM="|"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' meson-purifier.lock.json
-fails_with 'hash mismatch' meson-purifier realize
+sed -i 's|"sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="|"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' meson-purifier.lock.json
+fails_with 'edited by hand' meson-purifier prefetch
 
 # The package cache comes from the Nix store; build it while the network is
 # there.
 copy app
-meson-purifier realize >/dev/null
+meson-purifier prefetch >/dev/null
 
 # From here on every connection goes to a closed port, so a download by
 # Meson, git, hg or svn fails.
@@ -86,7 +85,9 @@ meson compile -C build
 
 # clangd reads the build directory's compile_commands.json, which points
 # into the subprojects Meson extracted from the package cache.
-clangd --check=main.c --compile-commands-dir=build >"$work/clangd" 2>&1 || {
+# An empty --tweaks leaves out clangd's self-test of its refactorings,
+# which reports failures of its own that say nothing about the build.
+clangd --check=main.c --tweaks= --compile-commands-dir=build >"$work/clangd" 2>&1 || {
   cat "$work/clangd" >&2
   exit 1
 }
@@ -97,14 +98,18 @@ echo "# changed" >>subprojects/zlib.wrap
 fails_with 'wrap files changed' meson setup build-stale "$fallbacks"
 meson subprojects foreach true >/dev/null
 
-# A lockfile without a download, as after a hand edit, stops Meson at that
-# subproject, with a hint.
+# A lockfile without a download stops Meson at that subproject, with a
+# hint. The script writes the lockfile with a matching contentHash, as
+# `meson-purifier lock` does.
 copy missing
 python3 - meson-purifier.lock.json <<'EOF'
-import json, sys
+import hashlib, json, sys
 path = sys.argv[1]
 data = json.load(open(path))
-data["artifacts"] = [e for e in data["artifacts"] if not e["path"].startswith("zlib")]
+data["wrapFiles"] = [name for name in data["wrapFiles"] if name != "zlib.wrap"]
+del data["contentHash"]
+text = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+data["contentHash"] = hashlib.sha256(text.encode()).hexdigest()
 open(path, "w").write(json.dumps(data, indent=2) + "\n")
 EOF
 fails_with 'does not hold' meson setup build "$fallbacks"

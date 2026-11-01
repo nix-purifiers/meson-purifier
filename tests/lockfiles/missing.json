@@ -1,0 +1,129 @@
+{
+  "version": 3,
+  "subprojectsDir": "subprojects",
+  "wrapsHash": "bb3937094c035b179a85159f24efc64d2633bbf8993b0b0be983aca4e6ac2ca0",
+  "definitionHash": "3301913da7b44e53cff4d8922bc7e8c76cb2be4167fae2f2996bdfdf8512035a",
+  "setupArgs": [
+    "--force-fallback-for=zlib,inih,libcjson,yaml-0.1"
+  ],
+  "outputs": {
+    "targets": {
+      "purifier-fixture": {
+        "type": "executable",
+        "files": [
+          "bin/purifier-fixture"
+        ]
+      },
+      "purifier-greeting": {
+        "type": "static library",
+        "files": [
+          "lib/libpurifier-greeting.a"
+        ]
+      }
+    },
+    "files": [
+      "bin/purifier-fixture",
+      "include/INIReader.h",
+      "include/cjson/cJSON.h",
+      "include/cjson/cJSON_Utils.h",
+      "include/greeting.h",
+      "include/ini.h",
+      "include/yaml.h",
+      "include/zconf.h",
+      "include/zlib.h",
+      "lib/libINIReader.so",
+      "lib/libINIReader.so.0",
+      "lib/libcjson.so",
+      "lib/libcjson.so.1",
+      "lib/libcjson.so.1.7.19",
+      "lib/libcjson_utils.so",
+      "lib/libcjson_utils.so.1",
+      "lib/libcjson_utils.so.1.7.19",
+      "lib/libinih.so",
+      "lib/libinih.so.0",
+      "lib/libpurifier-greeting.a",
+      "lib/libyaml-0.so",
+      "lib/libyaml-0.so.2",
+      "lib/libyaml-0.so.2.0.9",
+      "lib/libz.so",
+      "lib/libz.so.1",
+      "lib/libz.so.1.3.2",
+      "lib/pkgconfig/INIReader.pc",
+      "lib/pkgconfig/inih.pc",
+      "lib/pkgconfig/libcjson.pc",
+      "lib/pkgconfig/libcjson_utils.pc",
+      "lib/pkgconfig/yaml-0.1.pc",
+      "lib/pkgconfig/zlib.pc"
+    ]
+  },
+  "installedWraps": [
+    {
+      "path": "cjson.wrap",
+      "url": "https://wrapdb.mesonbuild.com/v2/cjson_1.7.19-1/cjson.wrap",
+      "mirrors": [],
+      "hash": "sha256-m974d8ZZRqdJzKJtcULAYbtEWKfCgA0VR8aFLS+evVM="
+    }
+  ],
+  "wrapFiles": [
+    "tinyexpr.wrap"
+  ],
+  "artifacts": [
+    {
+      "path": "cJSON-1.7.19.tar.gz",
+      "url": "https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.19.tar.gz",
+      "mirrors": [
+        "https://github.com/mesonbuild/wrapdb/releases/download/cjson_1.7.19-1/cJSON-1.7.19.tar.gz"
+      ],
+      "hash": "sha256-f6YW4wRu36eiijLV+erP0j+SkA/h+MzZiMFmLzBFRWI="
+    },
+    {
+      "path": "cjson_1.7.19-1_patch.zip",
+      "url": "https://wrapdb.mesonbuild.com/v2/cjson_1.7.19-1/get_patch",
+      "mirrors": [],
+      "hash": "sha256-tOFYsFfwc951zzhDb/AEc/Q7Y4vYA6Y2eJzu2u/X7P0="
+    },
+    {
+      "path": "hghooks",
+      "hg": {
+        "url": "https://hg.mozilla.org/hgcustom/hghooks",
+        "rev": "62eddffd848dc8617804412e1de0832b3d49e2e7",
+        "subrepos": true
+      },
+      "hash": "sha256-afQpiUTlNXEIOky0ZpbF+GEgwYJjuV7yKAP7szBpdOI="
+    },
+    {
+      "path": "inih",
+      "git": {
+        "url": "https://github.com/benhoyt/inih.git",
+        "rev": "26254ee9de7681f8825433415443e7116ff24b98",
+        "submodules": false,
+        "leaveDotGit": false,
+        "commitObject": null
+      },
+      "hash": "sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="
+    },
+    {
+      "path": "libyaml_0.2.5-1_patch.zip",
+      "url": "https://wrapdb.mesonbuild.com/v2/libyaml_0.2.5-1/get_patch",
+      "mirrors": [],
+      "hash": "sha256-vy6bkivgC2sAxfzinZ+43IPwQxx3I587c+iyVNPz9bU="
+    },
+    {
+      "path": "svn-examples",
+      "svn": {
+        "url": "https://svn.apache.org/repos/asf/subversion/trunk/tools/examples",
+        "rev": "1903580",
+        "ignoreExternals": false,
+        "ignoreKeywords": false
+      },
+      "hash": "sha256-iOopNkwCMeyP11uJHwW6Bd8y9Fd6FiywjdQLP1xVMiU="
+    },
+    {
+      "path": "yaml-0.2.5.tar.gz",
+      "url": "https://pyyaml.org/download/libyaml/yaml-0.2.5.tar.gz",
+      "mirrors": [],
+      "hash": "sha256-xkKum3X+4SCy2WxxJTi9LPKDIo0jN98s8piOPAJnjvQ="
+    }
+  ],
+  "contentHash": "31eb74f7a72a66bb0536c0fd340a8a86b9c90a127225fc2e09eefdfeabb2ae84"
+}
