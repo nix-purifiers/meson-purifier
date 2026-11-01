@@ -923,7 +923,7 @@ def meson_args(args: list) -> list:
 
 def exec_meson(args: list, env: dict) -> None:
     meson = real_meson()
-    os.execvpe(meson, [meson, *meson_args(args)], env)
+    os.execvpe(meson, [meson, *args], env)
 
 
 # Meson commands that change wrap files or need the network by design: they
@@ -974,6 +974,9 @@ def run_meson(args: list) -> int:
     try:
         project = find_project(Path.cwd())
     except PurifierError:
+        log(
+            "warning: no meson-purifier.lock.json found; running meson impurely. Run `meson-purifier lock` to use Nix-resolved dependencies."
+        )
         exec_meson(args, dict(os.environ))
     if not needs_lock(args):
         exec_meson(args, dict(os.environ))

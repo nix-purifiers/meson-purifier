@@ -1,56 +1,107 @@
 # meson-purifier
 
-meson-purifier makes Nix the download backend of a Meson build. Meson keeps
-planning the build from its wrap files. `meson-purifier lock` records what
-the wrap files cannot say, and Nix builds the project in its sandbox from
-the wrap files and that lockfile. The same downloads serve `meson setup`,
-`meson compile` and `meson test` at the desk, offline.
+meson-purifier keeps Meson's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 
 meson-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
 which share one builder interface and the commands `lock`, `update`,
 `prefetch` and `publish`.
 
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/meson-purifier'
+```
+
+This installs the `meson` wrapper. Use it for the locked
+development workflow below. With no purifier lockfile, it warns on standard
+error and runs the ordinary tool with impure resolution.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
+
 ## Quickstart
 
-Lock the project, from its directory, in a shell that has its compilers and
-build dependencies. Arguments for `meson setup` go after `--`:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+Meson's normal commands use:
 
 ```zsh
-nix run github:nix-purifiers/meson-purifier -- lock . -- -Dtests=false
+nix develop github:nix-purifiers/meson-purifier
+meson-purifier lock .
+meson setup build
+meson compile -C build
+meson test -C build
 ```
 
-Meson has no lockfile of its own. The wrap files in `subprojects/` name
-each subproject and belong to the build definition, so meson-purifier
-reads them from the source, and the builder and the commands take
-no separate build tool lockfile. `meson-purifier.lock.json` lies next to
-`meson.build`; commit it with the wrap files, which is the setup we
-recommend.
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-Then build the project from its directory. This adds no Nix file to the
-project:
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
+
+## Development loop
+
+`nix develop github:nix-purifiers/meson-purifier` gives a shell with the
+flake's `meson`, `ninja` and `meson-purifier`. Run Meson as usual:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.meson-purifier.buildMesonProject {
-    pname = "hello";
-    version = "1.0";
-    src = ./.;
-  }).packages.hello'
+meson setup build
+meson compile -C build
+meson test -C build
 ```
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+Meson has no plugin mechanism, so this `meson` is a wrapper around the real
+Meson. In a project with a lockfile, every `meson` command first builds the
+package cache of the lockfile through Nix and runs the real Meson with
+`MESON_PACKAGE_CACHE_DIR` pointing at it; `meson setup` also gets
+`--wrap-mode=nodownload`. Meson resolves a subproject from its package
+cache before it downloads anything, so it reads the files the Nix build
+reads and applies `patch_directory`, `diff_files` and patch archives with
+its own code.
+
+`meson wrap` and `meson subprojects` (other than `download`) run without
+the lockfile, because they are how a dependency is added or upgraded. To add
+one, run `meson wrap install <name>`, or write the wrap file, then
+`meson-purifier lock`.
+
+`meson-purifier update` runs `meson wrap update`, which moves the WrapDB
+wraps to their latest releases, and locks again with the `meson setup`
+arguments the lockfile records. `meson-purifier update zlib` updates only
+the named wraps. `meson-purifier lock` keeps the wraps as they are.
+
+Wrap files record no commit for a `wrap-git` that follows a branch, so
+`meson-purifier lock` resolves the branch to its current commit at each
+run, and a relock picks up new commits on it. A `revision` that names a tag
+or a commit keeps the lockfile the same from one lock to the next.
+
+`meson-purifier download` extracts every subproject of the main project
+into the subproject directory, offline, the way `meson subprojects download`
+does with the network. `meson-purifier publish <tag>` builds the `release`
+of the flake in the current directory and uploads its files to the GitHub
+release `<tag>` with `gh`.
+
+Every command takes `--lockfile <path>` for a lockfile kept outside the
+project, and the toolchain `meson` reads `MESON_PURIFIER_LOCKFILE`. A dev
+shell can set that variable to the path it passes as `lockFile`.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 `packages.hello` is the build target named `hello`; `packages.all` is
 everything the project installs.
@@ -120,50 +171,33 @@ wrap files into the lock in memory that every purifier gives: `purifier`,
 `entries`, `outputs` and `problems`. The builder passes it to `checkLock` of
 the purifier library, which fails evaluation with the problems.
 
-## Development loop
+### One-off builds without a project Nix file
 
-`nix develop github:nix-purifiers/meson-purifier` gives a shell with the
-flake's `meson`, `ninja` and `meson-purifier`. Run Meson as usual:
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
 ```zsh
-meson setup build
-meson compile -C build
-meson test -C build
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.meson-purifier.buildMesonProject {
+    pname = "hello";
+    version = "1.0";
+    src = ./.;
+  }).packages.hello'
 ```
 
-Meson has no plugin mechanism, so this `meson` is a wrapper around the real
-Meson. In a project with a lockfile, every `meson` command first builds the
-package cache of the lockfile through Nix and runs the real Meson with
-`MESON_PACKAGE_CACHE_DIR` pointing at it; `meson setup` also gets
-`--wrap-mode=nodownload`. Meson resolves a subproject from its package
-cache before it downloads anything, so it reads the files the Nix build
-reads and applies `patch_directory`, `diff_files` and patch archives with
-its own code.
-
-`meson wrap` and `meson subprojects` (other than `download`) run without
-the lockfile, because they are how a dependency is added or upgraded. To add
-one, run `meson wrap install <name>`, or write the wrap file, then
-`meson-purifier lock`.
-
-`meson-purifier update` runs `meson wrap update`, which moves the WrapDB
-wraps to their latest releases, and locks again with the `meson setup`
-arguments the lockfile records. `meson-purifier update zlib` updates only
-the named wraps. `meson-purifier lock` keeps the wraps as they are.
-
-Wrap files record no commit for a `wrap-git` that follows a branch, so
-`meson-purifier lock` resolves the branch to its current commit at each
-run, and a relock picks up new commits on it. A `revision` that names a tag
-or a commit keeps the lockfile the same from one lock to the next.
-
-`meson-purifier download` extracts every subproject of the main project
-into the subproject directory, offline, the way `meson subprojects download`
-does with the network. `meson-purifier publish <tag>` builds the `release`
-of the flake in the current directory and uploads its files to the GitHub
-release `<tag>` with `gh`.
-
-Every command takes `--lockfile <path>` for a lockfile kept outside the
-project, and the toolchain `meson` reads `MESON_PURIFIER_LOCKFILE`. A dev
-shell can set that variable to the path it passes as `lockFile`.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -241,6 +275,11 @@ These fail or need a step from you:
   `--` to lock subprojects regardless.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### rizin
 
