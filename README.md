@@ -19,9 +19,22 @@ build dependencies. Arguments for `meson setup` go after `--`:
 nix run github:nix-purifiers/meson-purifier -- lock . -- -Dtests=false
 ```
 
-Commit `meson-purifier.lock.json`, and build with the flake's library:
+Commit `meson-purifier.lock.json`. The flake's `overlays.default` adds
+`buildMesonProject` to a package set, and a package written for
+`callPackage` takes it by name, like any other builder:
 
 ```nix
+# package.nix
+{ buildMesonProject }:
+(buildMesonProject {
+  pname = "hello";
+  version = "1.0";
+  src = ./.;
+}).packages.hello
+```
+
+```nix
+# flake.nix
 {
   inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
   inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
@@ -29,25 +42,19 @@ Commit `meson-purifier.lock.json`, and build with the flake's library:
   outputs = { nixpkgs, meson-purifier, ... }:
     let
       system = "x86_64-linux";
-      project = meson-purifier.lib.meson-purifier.buildMesonProject {
-        pkgs = nixpkgs.legacyPackages.${system};
-        pname = "hello";
-        version = "1.0";
-        src = ./.;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ meson-purifier.overlays.default ];
       };
     in
     {
-      packages.${system} = project.packages // {
-        default = project.packages.all;
-      };
-      checks.${system}.tests = project.tests;
+      packages.${system}.default = pkgs.callPackage ./package.nix { };
     };
 }
 ```
 
 `buildMesonProject` takes the arguments of `stdenv.mkDerivation` and these:
 
-- `pkgs`, the package set the build uses;
 - `src`, the project;
 - `lockFile`, the lockfile, by default `meson-purifier.lock.json` in `src`.
   A lockfile given here takes the place of any lockfile in `src`, so a
@@ -55,6 +62,9 @@ Commit `meson-purifier.lock.json`, and build with the flake's library:
 - `fetchers`, fetchers in place of nixpkgs' own, such as a `fetchurl` with a
   company mirror or credentials. They go to `fetchEntry` and `tree` of the
   [purifier](https://github.com/nix-purifiers/purifier) library.
+
+It takes `stdenv`, `meson`, `ninja` and `pkg-config` from the package set,
+and `buildMesonProject.override` replaces them.
 
 The result has, all known at evaluation time from the lockfile:
 
@@ -73,7 +83,7 @@ wrap files into the lock in memory that every purifier gives: `purifier`,
 `entries`, `outputs` and `problems`. The builder passes it to `checkLock` of
 the purifier library, which fails evaluation with the problems.
 
-## Everyday loop
+## Development loop
 
 `nix develop github:nix-purifiers/meson-purifier` gives a shell with the
 flake's `meson`, `ninja` and `meson-purifier`. Run Meson as usual:
@@ -112,7 +122,7 @@ Every command takes `--lockfile <path>` for a lockfile kept outside the
 project, and the toolchain `meson` reads `MESON_PURIFIER_LOCKFILE`. A dev
 shell can set that variable to the path it passes as `lockFile`.
 
-## Offline work
+## Working offline
 
 `meson-purifier prefetch` builds the package cache of the lockfile in the
 Nix store, keeps it under a GC root at `.meson-purifier/package-cache` in
@@ -126,7 +136,7 @@ Editors and language servers read the build directory as usual.
 `compile_commands.json` points into the subprojects Meson extracted from the
 package cache, so clangd finds every header offline.
 
-## Errors and fixes
+## Troubleshooting
 
 Every error names the problem and the command that fixes it.
 
@@ -134,17 +144,20 @@ Every error names the problem and the command that fixes it.
 |---|---|---|
 | A wrap file changed after the lock run | interactive commands refuse to run; the builder fails at evaluation time | `meson-purifier lock` |
 | A `meson.build` file changed after the lock run | the downloads are current, so commands go on; the builder warns that the recorded targets may be out of date | `meson-purifier lock` |
-| The lockfile was edited by hand | its `contentHash` no longer matches; commands and the builder refuse it | `meson-purifier lock` |
+| The lockfile was edited by hand | its `contentHash` does not match; commands and the builder refuse it | `meson-purifier lock` |
 | The lockfile lacks a download | Meson stops at that subproject, and meson-purifier explains why, interactively and in the Nix build | `meson-purifier lock`, with the setup arguments that choose the subproject after `--` |
 | An upstream file changed | Nix reports a hash mismatch, and meson-purifier says what it means | `meson-purifier lock` |
 | The lockfile has merge conflict markers, lacks a field, or has another format version | commands and the builder name the problem | `meson-purifier lock` |
 | `src` is built by a derivation, so Nix cannot read its wrap files at evaluation | the builder names the problem | `meson-purifier lock --record-all`, or a `src` from a flake input or `builtins.fetchTarball` |
 
-## Sources supported and refused
+## Supported language repositories
 
-`meson-purifier lock` reads the wrap files with Meson's own wrap code, so it
-parses them, follows `wrap-redirect` files and merges wraps as Meson does.
-The lockfile records only what the wrap files cannot say:
+meson-purifier fetches what Meson wrap files name: archives from
+[WrapDB](https://mesonbuild.com/Wrapdb-projects.html) and from any URL, and
+checkouts from git, Mercurial and Subversion repositories. `meson-purifier
+lock` reads the wrap files with Meson's own wrap code, so it parses them,
+follows `wrap-redirect` files and merges wraps as Meson does. The lockfile
+records what the wrap files cannot say:
 
 | Source | In the lockfile | Why |
 |---|---|---|
@@ -156,34 +169,33 @@ The lockfile records only what the wrap files cannot say:
 | `wrap-svn` | the revision number and NAR hash | as for git; the export runs with `TZ=UTC`, so expanded keywords match the sandbox |
 | the outputs and the `meson setup` arguments | installed targets and files | they come from configuring the project |
 
-Wrap files are INI files, which Meson reads with Python's configparser. Nix
-has no INI reader, so `nix/lib/wrap-file.nix` reads the part of the syntax
-wrap files use: sections, `key = value` and `key: value`, lowercased keys,
-full-line `#` and `;` comments, and indented continuation lines. Nix reads
-wrap files from a `src` that is a path, a flake input, or the result of
-`builtins.fetchTarball` or `builtins.fetchGit`. A `src` that a derivation
-builds, such as `fetchFromGitHub`, would need import-from-derivation, so its
-lockfile is written with `--record-all`, which records the archives of every
-wrap.
+Wrap files are INI files, which Meson reads with Python's configparser.
+`nix/lib/wrap-file.nix` reads the part of the syntax wrap files use:
+sections, `key = value` and `key: value`, lowercased keys, full-line `#` and
+`;` comments, and indented continuation lines. Nix reads wrap files from a
+`src` that is a path, a flake input, or the result of `builtins.fetchTarball`
+or `builtins.fetchGit`. For a `src` that a derivation builds, such as
+`fetchFromGitHub`, lock with `--record-all`, which records the archives of
+every wrap.
 
 The lock run also configures a copy of the project with the network and
 nixpkgs' setup options. That finds the wraps installed from `wrapdb.json`
-and the outputs. It locks every wrap it can reach, not only the ones the
-current configuration uses.
-
-meson-purifier refuses or does not cover:
-
-- **downloads outside Meson's wrap code,** such as a `custom_target` or
-  `run_command` that fetches files, which fail in the sandbox;
-- **wraps installed from `wrapdb.json` for another configuration** than the
-  lock run uses;
-- **a dependency the lock environment has but the Nix build lacks,** which
-  can hide a subproject fallback from the lock; pass `--force-fallback-for`
-  after `--` to lock subprojects regardless.
+and the outputs. It locks every wrap it can reach, so a change of options
+finds its subprojects in the lockfile.
 
 Cargo subprojects that Meson reads from `Cargo.lock` reach the lock run as
-wrap-files and lock the same way. Subprojects with a custom `subproject_dir` are found when `project()` names
-it as a quoted literal.
+wrap-files and lock the same way. A custom `subproject_dir` is found when
+`project()` names it as a quoted literal.
+
+These fail or need a step from you:
+
+- **downloads outside Meson's wrap code,** such as a `custom_target` or
+  `run_command` that fetches files, fail in the sandbox;
+- **wraps installed from `wrapdb.json`** are found for the configuration the
+  lock run uses;
+- **a dependency the lock environment has but the Nix build lacks** can hide
+  a subproject fallback from the lock; pass `--force-fallback-for` after
+  `--` to lock subprojects regardless.
 
 ## Examples
 
@@ -212,8 +224,11 @@ Then add a `flake.nix` next to `meson.build`:
   outputs = { nixpkgs, meson-purifier, ... }:
     let
       system = "x86_64-linux";
-      rizin = meson-purifier.lib.meson-purifier.buildMesonProject {
-        pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ meson-purifier.overlays.default ];
+      };
+      rizin = pkgs.buildMesonProject {
         pname = "rizin";
         version = "0.8.2";
         src = ./.;
@@ -246,23 +261,23 @@ nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
 ```
 
 ```nix
-{
-  inputs.rizin = {
-    url = "github:rizinorg/rizin/v0.8.2";
-    flake = false;
-  };
-  # meson-purifier and nixpkgs as above
+# rizin.nix in your flake, called with pkgs.callPackage ./rizin.nix { inherit rizin; }
+{ buildMesonProject, rizin }:
+(buildMesonProject {
+  pname = "rizin";
+  version = "0.8.2";
+  src = rizin;
+  lockFile = ./rizin.lock.json;
+}).packages.all
+```
 
-  outputs = { nixpkgs, meson-purifier, rizin, ... }: {
-    packages.x86_64-linux = (meson-purifier.lib.meson-purifier.buildMesonProject {
-      pkgs = nixpkgs.legacyPackages.x86_64-linux;
-      pname = "rizin";
-      version = "0.8.2";
-      src = rizin;
-      lockFile = ./rizin.lock.json;
-    }).packages;
-  };
-}
+with rizin as a flake input that is not a flake:
+
+```nix
+inputs.rizin = {
+  url = "github:rizinorg/rizin/v0.8.2";
+  flake = false;
+};
 ```
 
 ## Credits

@@ -18,7 +18,8 @@
 let
   pkgs' = pkgs.extend overlay;
   inherit (pkgs') lib runCommand;
-  inherit (mesonPurifier) buildMesonProject readLock;
+  inherit (mesonPurifier) readLock;
+  inherit (pkgs') buildMesonProject;
   inherit (pkgs'.meson-purifier) cli;
 
   # The fixture project, which was locked with --force-fallback-for, so
@@ -28,7 +29,6 @@ let
     args:
     buildMesonProject (
       {
-        pkgs = pkgs';
         pname = "purifier-fixture";
         version = "1.0.0";
         src = ./fixtures/app;
@@ -93,7 +93,6 @@ let
     '';
 
   external = buildMesonProject {
-    pkgs = pkgs';
     pname = "external-fixture";
     version = "1.0.0";
     src = ./fixtures/external;
@@ -101,7 +100,6 @@ let
   };
 
   rizin = buildMesonProject {
-    pkgs = pkgs';
     pname = "rizin";
     version = "0.8.2";
     # builtins.fetchTarball fetches at evaluation, so the build reads the
@@ -222,6 +220,29 @@ in
       test -f ${app.packages.all}/include/greeting.h
       touch $out
     '';
+
+  # A package written for callPackage takes the builder from the package
+  # set, and buildMesonProject.override replaces what the builder takes.
+  builder-package =
+    let
+      consumer = pkgs'.callPackage (
+        { buildMesonProject }:
+        (buildMesonProject {
+          pname = "purifier-fixture";
+          version = "1.0.0";
+          src = ./fixtures/app;
+        }).packages.purifier-fixture
+      ) { };
+      overridden = buildMesonProject.override { ninja = pkgs'.samurai; };
+    in
+    assert consumer.drvPath == app.packages.purifier-fixture.drvPath;
+    assert
+      (overridden {
+        pname = "purifier-fixture";
+        version = "1.0.0";
+        src = ./fixtures/app;
+      }).packages.all.drvPath != app.packages.all.drvPath;
+    runCommand "builder-package" { } "touch $out";
 
   # The source release `meson dist` makes, which `publish` uploads.
   fixture-release = runCommand "fixture-release" { } ''

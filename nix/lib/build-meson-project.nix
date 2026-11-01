@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: MIT
 #
 # buildMesonProject: the sandboxed build of a Meson project, from the
-# lockfile `meson-purifier lock` writes. The flake publishes it as
-# `lib.meson-purifier.buildMesonProject`:
+# lockfile `meson-purifier lock` writes.
 #
-#   lib.meson-purifier.buildMesonProject {
-#     pkgs = nixpkgs.legacyPackages.x86_64-linux;
-#     pname = "hello";
-#     version = "1.0";
-#     src = ./.;
-#   }
+# The file is a package for callPackage: the first argument set is what it
+# takes from the package set, and the result is the builder. The flake's
+# `overlays.default` adds it to the package set as `buildMesonProject`, so
+# a package written for callPackage takes it like any other builder:
 #
-# It takes the arguments of stdenv.mkDerivation and these:
+#   { buildMesonProject }:
+#   (buildMesonProject { pname = "hello"; version = "1.0"; src = ./.; }).packages.hello
 #
-#   pkgs       the package set the build uses
+# and `buildMesonProject.override` replaces what it takes from the set.
+#
+# The builder takes the arguments of stdenv.mkDerivation and these:
+#
 #   src        the project
 #   fetchers   fetchers in place of nixpkgs' own, such as a fetchurl with a
 #              mirror or credentials; they go to fetchEntry and tree of the
@@ -48,24 +49,28 @@
 #
 # After `meson install` the build fails if a file the lockfile records is
 # missing, which means the lockfile is older than the build definition.
-{ purifierLib, readLock }:
 {
-  pkgs,
+  lib,
+  stdenv,
+  meson,
+  ninja,
+  pkg-config,
+  runCommand,
+  git,
+  callPackage,
+  # The library of the nix-purifiers (`lib.purifier`) and readLock
+  # (read-lock.nix), which the overlay passes from the library of this
+  # flake.
+  purifierLib,
+  readLock,
+}:
+{
   src,
   fetchers ? { },
   lockFile ? src + "/meson-purifier.lock.json",
   ...
 }@args:
 let
-  inherit (pkgs)
-    lib
-    stdenv
-    meson
-    ninja
-    pkg-config
-    runCommand
-    git
-    ;
 
   # The lock in memory of the purifier contract. checkLock fails the
   # evaluation with its problems: a stale, tampered, malformed or
@@ -78,7 +83,7 @@ let
   });
   inherit (lock.meson) subprojectsDir installedWraps;
 
-  packageCache = pkgs.callPackage ./package-cache.nix {
+  packageCache = callPackage ./package-cache.nix {
     inherit purifierLib fetchers;
     entries = purifierLib.entriesFor stdenv.hostPlatform.system lock;
   };
@@ -122,7 +127,6 @@ let
   '';
 
   derivationArgs = builtins.removeAttrs args [
-    "pkgs"
     "fetchers"
     "lockFile"
   ];
