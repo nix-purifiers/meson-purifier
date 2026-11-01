@@ -354,10 +354,17 @@ def lock_wrap(wrap, cache: Path, work: Path, artifacts: dict) -> None:
         number, nar = fetch_svn(
             values["url"], values.get("revision", "HEAD"), cache / wrap.directory, work
         )
+        # Meson checks a wrap-svn out with a plain `svn checkout`, which
+        # fetches externals and expands keywords.
         add(
             {
                 "path": wrap.directory,
-                "svn": {"url": values["url"], "rev": number},
+                "svn": {
+                    "url": values["url"],
+                    "rev": number,
+                    "ignoreExternals": False,
+                    "ignoreKeywords": False,
+                },
                 "hash": nar,
             }
         )

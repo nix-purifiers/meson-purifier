@@ -52,7 +52,12 @@ let
       }
     else if entry ? svn then
       fetchsvn {
-        inherit (entry.svn) url rev;
+        inherit (entry.svn)
+          url
+          rev
+          ignoreExternals
+          ignoreKeywords
+          ;
         inherit (entry) hash;
       }
     else

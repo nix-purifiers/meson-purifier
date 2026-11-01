@@ -106,7 +106,9 @@
       "path": "svn-examples",
       "svn": {
         "url": "https://svn.apache.org/repos/asf/subversion/trunk/tools/examples",
-        "rev": "1903580"
+        "rev": "1903580",
+        "ignoreExternals": false,
+        "ignoreKeywords": false
       },
       "hash": "sha256-iOopNkwCMeyP11uJHwW6Bd8y9Fd6FiywjdQLP1xVMiU="
     },
