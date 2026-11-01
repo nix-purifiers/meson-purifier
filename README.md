@@ -45,8 +45,10 @@ lockfile, and runs Meson with `MESON_PACKAGE_CACHE_DIR` pointing at it and
 with `--wrap-mode=nodownload`. The cache is a `tree` of the download
 entries, from [purifier](https://github.com/nix-purifiers/purifier), the
 library the nix-purifiers share. The flake publishes it as
-`lib.meson-purifier.packageCache { pkgs, lockFile }`, which both the
-builder and the interactive commands use. Meson does the rest the way it always does,
+`lib.meson-purifier.packageCache { pkgs, lockFile }`, which the builder
+uses. The interactive commands build the same cache with `nix-build`,
+importing the library through its root `default.nix` from the source this
+flake pins. Meson does the rest the way it always does,
 so `[provide]` sections, `dependency()` fallbacks, nested wraps and patches
 behave as they do with the network.
 

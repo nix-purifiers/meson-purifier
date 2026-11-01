@@ -8,13 +8,13 @@
 # `projects` holds it as `meson-purifier/default`, which its package sets
 # apply by default.
 #
-# Both build the package cache with `lib.meson-purifier.packageCache`.
-# Interactive commands build it outside a Nix build, through this flake, so
-# the toolchain gets the locked reference of this flake's source.
-{ closure-lib, ... }:
+# The builder builds the package cache with `lib.meson-purifier.packageCache`.
+# Interactive commands build it with nix-build outside this flake, so the
+# toolchain gets the source of the purifier library as this flake pins it,
+# whose root default.nix is the library's entry point outside a flake.
+{ closure-lib, closure-inputs, ... }:
 let
   packages = closure-lib.caisson.nixpkgs.mkPackagesOverlay ../../pkgs "meson-purifier";
-  root = closure-lib.caisson-core.libManifest.root;
 in
 {
   overlay =
@@ -26,7 +26,7 @@ in
     // {
       meson-purifier = added.meson-purifier // {
         toolchain = added.meson-purifier.toolchain.override {
-          flakeRef = "path:${root.outPath}" + (if root ? narHash then "?narHash=${root.narHash}" else "");
+          purifierSource = closure-inputs.purifier.outPath;
         };
       };
       buildMesonProject = final.callPackage ../../nix/lib/build-meson-project.nix {

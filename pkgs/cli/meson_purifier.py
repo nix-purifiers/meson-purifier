@@ -31,10 +31,12 @@ WRAPDB_URL = "https://wrapdb.mesonbuild.com/v2"
 # The start of a wrap file that only redirects to a wrap in a subproject.
 REDIRECT = b"[wrap-redirect]"
 
-# Set by the toolchain package: the locked reference of the meson-purifier
-# flake it comes from, whose lib.meson-purifier.packageCache the interactive
-# commands build the package cache with.
-FLAKE = os.environ.get("MESON_PURIFIER_FLAKE", "")
+# Set by the toolchain package: the directory of this purifier's Nix
+# library, the nixpkgs and the source of the purifier library that the
+# interactive commands build the package cache with.
+NIX_LIB = os.environ.get("MESON_PURIFIER_NIX_LIB", "")
+NIXPKGS = os.environ.get("MESON_PURIFIER_NIXPKGS", "")
+LIBRARY = os.environ.get("MESON_PURIFIER_LIBRARY", "")
 
 
 class PurifierError(Exception):
@@ -686,28 +688,13 @@ def check_fresh(project: Path) -> dict:
     return data
 
 
-def package_cache_expression(flake: str, lock_file: Path) -> str:
-    """The Nix expression of the package cache of `lock_file`, through the
-    meson-purifier flake `flake`, for the system Nix runs on. The fetchers
-    come from the nixpkgs that flake pins.
-
-    The flake reference and the path become JSON strings, which are Nix
-    string literals.
-    """
-    return (
-        f"let flake = builtins.getFlake {json.dumps(flake)}; "
-        "in flake.lib.meson-purifier.packageCache { "
-        "pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem}; "
-        f"lockFile = {json.dumps(str(lock_file))}; }}"
-    )
-
-
 def realize(project: Path) -> Path:
     """Builds the package cache of the lockfile, with a GC root in the
     project, and returns its store path."""
-    if not FLAKE:
+    if not (NIX_LIB and NIXPKGS and LIBRARY):
         raise PurifierError(
-            "MESON_PURIFIER_FLAKE is not set; run meson-purifier from the toolchain package"
+            "MESON_PURIFIER_NIX_LIB, MESON_PURIFIER_NIXPKGS and MESON_PURIFIER_LIBRARY "
+            "are not set; run meson-purifier from the toolchain package"
         )
     state = project / STATE_DIR
     state.mkdir(exist_ok=True)
@@ -715,10 +702,24 @@ def realize(project: Path) -> Path:
     if not gitignore.exists():
         gitignore.write_text("*\n")
     link = state / "package-cache"
-    expression = package_cache_expression(FLAKE, (project / LOCK_NAME).resolve())
     try:
         run(
-            ["nix", "build", "--impure", "--expr", expression, "--out-link", str(link)],
+            [
+                "nix-build",
+                "--quiet",
+                f"{NIX_LIB}/interactive.nix",
+                "--arg",
+                "lockFile",
+                str((project / LOCK_NAME).resolve()),
+                "--arg",
+                "nixpkgs",
+                NIXPKGS,
+                "--arg",
+                "purifier",
+                LIBRARY,
+                "--out-link",
+                str(link),
+            ],
             stdout=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError as e:
