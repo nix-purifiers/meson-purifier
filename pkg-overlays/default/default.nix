@@ -7,15 +7,30 @@
 # callPackage takes it by name. A consumer that lists this flake in
 # `projects` holds it as `meson-purifier/default`, which its package sets
 # apply by default.
+#
+# Both build the package cache with `lib.meson-purifier.packageCache`.
+# Interactive commands build it outside a Nix build, through this flake, so
+# the toolchain gets the locked reference of this flake's source.
 { closure-lib, ... }:
 let
   packages = closure-lib.caisson.nixpkgs.mkPackagesOverlay ../../pkgs "meson-purifier";
+  root = closure-lib.caisson-core.libManifest.root;
 in
 {
   overlay =
     final: prev:
-    packages final prev
+    let
+      added = packages final prev;
+    in
+    added
     // {
-      buildMesonProject = final.callPackage ../../nix/lib/build-meson-project.nix { };
+      meson-purifier = added.meson-purifier // {
+        toolchain = added.meson-purifier.toolchain.override {
+          flakeRef = "path:${root.outPath}" + (if root ? narHash then "?narHash=${root.narHash}" else "");
+        };
+      };
+      buildMesonProject = final.callPackage ../../nix/lib/build-meson-project.nix {
+        packageCacheOf = closure-lib.meson-purifier.packageCache;
+      };
     };
 }

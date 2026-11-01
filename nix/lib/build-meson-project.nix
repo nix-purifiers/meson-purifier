@@ -41,8 +41,11 @@
   meson,
   ninja,
   pkg-config,
-  callPackage,
   runCommand,
+  pkgs,
+  # lib.meson-purifier.packageCache, which the default package overlay
+  # passes.
+  packageCacheOf,
 }:
 {
   src,
@@ -51,7 +54,7 @@
   ...
 }@args:
 let
-  packageCache = callPackage ./package-cache.nix { inherit lockFile; };
+  packageCache = packageCacheOf { inherit pkgs lockFile; };
   inherit (packageCache) lock;
 
   # The files of a source given as a path are readable during evaluation,

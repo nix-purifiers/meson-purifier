@@ -8,8 +8,10 @@
 #
 # The tools a lock run uses (git, nix-prefetch-git, Mercurial and
 # Subversion) come from the end of PATH, so the user's own come first.
-# Interactive commands build the package cache with the nixpkgs of this
-# package set.
+# Interactive commands build the package cache through the meson-purifier
+# flake this package comes from, with `lib.meson-purifier.packageCache` and
+# the package set of that flake; `flakeRef` is the locked reference of its
+# source, which the default package overlay passes.
 {
   lib,
   runCommand,
@@ -20,20 +22,17 @@
   nix-prefetch-git,
   mercurial,
   subversion,
-  path,
   cli,
+  flakeRef ? throw "meson-purifier: the toolchain needs `flakeRef`, which the default package overlay of the meson-purifier flake passes",
 }:
 let
   wrapperArgs = lib.escapeShellArgs [
     "--set-default"
     "MESON_PURIFIER_MESON"
     "${meson}/bin/meson"
-    "--set"
-    "MESON_PURIFIER_NIX_LIB"
-    "${../../nix/lib}"
     "--set-default"
-    "MESON_PURIFIER_NIXPKGS"
-    "${path}"
+    "MESON_PURIFIER_FLAKE"
+    flakeRef
     "--suffix"
     "PATH"
     ":"

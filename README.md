@@ -42,7 +42,11 @@ applies the wrap's `patch_directory` and `diff_files` itself.
 
 meson-purifier builds such a package cache in the Nix store from the
 lockfile, and runs Meson with `MESON_PACKAGE_CACHE_DIR` pointing at it and
-with `--wrap-mode=nodownload`. Meson does the rest the way it always does,
+with `--wrap-mode=nodownload`. The cache is a `tree` of the download
+entries, from [purifier](https://github.com/nix-purifiers/purifier), the
+library the nix-purifiers share. The flake publishes it as
+`lib.meson-purifier.packageCache { pkgs, lockFile }`, which both the
+builder and the interactive commands use. Meson does the rest the way it always does,
 so `[provide]` sections, `dependency()` fallbacks, nested wraps and patches
 behave as they do with the network.
 
