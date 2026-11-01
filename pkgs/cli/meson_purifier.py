@@ -215,14 +215,62 @@ def prefetch_file(urls: list, name: str, expected: str) -> tuple:
     raise PurifierError(f"could not fetch {name}:\n" + "\n".join(errors))
 
 
+def pick_git_commit(refs: dict, revision: str):
+    """The commit that `revision` names among the refs `git ls-remote`
+    printed, or None.
+
+    Meson checks a wrap-git out with `git checkout <revision>`, which takes a
+    tag before a branch of the same name, and a commit hash as it is.
+    """
+    if not revision or revision.upper() == "HEAD":
+        return refs.get("HEAD")
+    if revision.startswith("refs/"):
+        candidates = [f"{revision}^{{}}", revision]
+    else:
+        candidates = [
+            f"refs/tags/{revision}^{{}}",
+            f"refs/tags/{revision}",
+            f"refs/heads/{revision}",
+        ]
+    for candidate in candidates:
+        if candidate in refs:
+            return refs[candidate]
+    if re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision):
+        return revision.lower()
+    return None
+
+
+def resolve_git_commit(url: str, revision: str) -> str:
+    """The commit a wrap-git revision names: a tag, a branch, HEAD or a full
+    commit hash."""
+    out = run(["git", "ls-remote", url], stdout=subprocess.PIPE, text=True).stdout
+    refs = {}
+    for line in out.splitlines():
+        sha, _, name = line.partition("\t")
+        if name:
+            refs[name] = sha
+    commit = pick_git_commit(refs, revision)
+    if commit is None:
+        raise PurifierError(
+            f"{url} has no tag or branch named {revision!r}; a wrap-git revision must be a "
+            "tag, a branch, HEAD or a full commit hash"
+        )
+    return commit
+
+
 def prefetch_git(url: str, revision: str, submodules: bool) -> tuple:
     """Fetches a git revision the way nixpkgs' fetchgit does.
 
     Returns the commit, the NAR hash and the store path.
     """
-    args = ["nix-prefetch-git", "--quiet", "--url", url]
-    if revision and revision.lower() != "head":
-        args += ["--rev", revision]
+    args = [
+        "nix-prefetch-git",
+        "--quiet",
+        "--url",
+        url,
+        "--rev",
+        resolve_git_commit(url, revision),
+    ]
     if submodules:
         args.append("--fetch-submodules")
     out = run(args, stdout=subprocess.PIPE, text=True)

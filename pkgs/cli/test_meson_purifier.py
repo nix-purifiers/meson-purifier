@@ -127,6 +127,28 @@ class Helpers(unittest.TestCase):
             mp.meson_args(["compile", "-C", "build"]), ["compile", "-C", "build"]
         )
 
+    def test_pick_git_commit(self):
+        refs = {
+            "HEAD": "a" * 40,
+            "refs/heads/main": "a" * 40,
+            "refs/heads/v4": "b" * 40,
+            "refs/tags/v5": "c" * 40,
+            "refs/tags/v5^{}": "d" * 40,
+            "refs/tags/r1": "e" * 40,
+            "refs/heads/r1": "f" * 40,
+        }
+        self.assertEqual(mp.pick_git_commit(refs, "HEAD"), "a" * 40)
+        # A branch, as rizin's capstone-v4.wrap names one.
+        self.assertEqual(mp.pick_git_commit(refs, "v4"), "b" * 40)
+        # An annotated tag, peeled to its commit.
+        self.assertEqual(mp.pick_git_commit(refs, "v5"), "d" * 40)
+        # A tag before a branch of the same name, as `git checkout` does.
+        self.assertEqual(mp.pick_git_commit(refs, "r1"), "e" * 40)
+        self.assertEqual(mp.pick_git_commit(refs, "refs/heads/r1"), "f" * 40)
+        self.assertEqual(mp.pick_git_commit(refs, "1" * 40), "1" * 40)
+        self.assertIsNone(mp.pick_git_commit(refs, "missing"))
+        self.assertIsNone(mp.pick_git_commit(refs, "1234567"))
+
     def test_needs_lock(self):
         for args in (
             ["setup", "build"],
