@@ -188,15 +188,20 @@ wrap-files and lock the same way; the checks exercise C subprojects only.
 Subprojects with a custom `subproject_dir` are found when `project()` names
 it as a quoted literal.
 
-## Real-world projects
+## Examples
 
-| Project | Lock | Build | Notes |
-|---|---|---|---|
-| [rizin](https://github.com/rizinorg/rizin) 0.8.2 | 35 s | about 80 s | 19 downloads: the lockfile records 11 git checkouts, and Nix reads the archives of 8 wrap files from them. The check `real-world-rizin` builds it from `builtins.fetchTarball` with the lockfile in `tests/real-world/`, and runs `rizin -v` and `rz-asm`. |
+CI builds [rizin](https://github.com/rizinorg/rizin) 0.8.2 in the check
+`real-world-rizin`. The source comes from `builtins.fetchTarball`, and the
+lockfile is kept in `tests/real-world/rizin.lock.json`. rizin takes 19
+downloads through its wraps: the lockfile records 11 git checkouts, and Nix
+reads the archives of the other 8 from the wrap files. Four of the git wraps
+follow branches, which the lock run resolves to commits with
+`git ls-remote`. A lock run takes about 35 seconds and a build about 80. The
+check runs `rizin -v` and assembles an instruction with `rz-asm`.
 
-rizin pins four of its git wraps to branches (`v4`, `v5`, `next`, `main`).
-That led the lock run to resolve a branch with `git ls-remote` before it
-fetches, so the lockfile records the commit of the branch.
+The fixtures in `tests/fixtures/` are smaller examples. `app` takes one
+dependency from each kind of wrap, `external` keeps its lockfile outside the
+project, and `update` pins an old zlib release for `meson-purifier update`.
 
 ## Credits
 
