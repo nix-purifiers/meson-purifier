@@ -7,8 +7,8 @@ the wrap files and that lockfile. The same downloads serve `meson setup`,
 `meson compile` and `meson test` at the desk, offline.
 
 meson-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
-and meets their contract: the builder, the lock in memory, the commands
-`lock`, `update`, `prefetch` and `publish`, and the conformance checks.
+which share one builder interface and the commands `lock`, `update`,
+`prefetch` and `publish`.
 
 ## Quickstart
 
@@ -118,15 +118,13 @@ shell can set that variable to the path it passes as `lockFile`.
 Nix store, keeps it under a GC root at `.meson-purifier/package-cache` in
 the project, and prints its path. After it, `meson setup`, `meson compile`,
 `meson test` and the editor work with the network cut off; Meson, ninja and
-the compilers come from the Nix store already. The CI job
-`conformance-offline` runs the loop behind a closed proxy.
+the compilers come from the Nix store already.
 
 ## Editor
 
 Editors and language servers read the build directory as usual.
 `compile_commands.json` points into the subprojects Meson extracted from the
-package cache, so clangd finds every header offline. rizin, with its 296
-targets, gives clangd no errors.
+package cache, so clangd finds every header offline.
 
 ## Errors and fixes
 
@@ -184,24 +182,88 @@ meson-purifier refuses or does not cover:
   after `--` to lock subprojects regardless.
 
 Cargo subprojects that Meson reads from `Cargo.lock` reach the lock run as
-wrap-files and lock the same way; the checks exercise C subprojects only.
-Subprojects with a custom `subproject_dir` are found when `project()` names
+wrap-files and lock the same way. Subprojects with a custom `subproject_dir` are found when `project()` names
 it as a quoted literal.
 
 ## Examples
 
-CI builds [rizin](https://github.com/rizinorg/rizin) 0.8.2 in the check
-`real-world-rizin`. The source comes from `builtins.fetchTarball`, and the
-lockfile is kept in `tests/real-world/rizin.lock.json`. rizin takes 19
-downloads through its wraps: the lockfile records 11 git checkouts, and Nix
-reads the archives of the other 8 from the wrap files. Four of the git wraps
-follow branches, which the lock run resolves to commits with
-`git ls-remote`. A lock run takes about 35 seconds and a build about 80. The
-check runs `rizin -v` and assembles an instruction with `rz-asm`.
+### rizin
 
-The fixtures in `tests/fixtures/` are smaller examples. `app` takes one
-dependency from each kind of wrap, `external` keeps its lockfile outside the
-project, and `update` pins an old zlib release for `meson-purifier update`.
+[rizin](https://github.com/rizinorg/rizin), the reverse-engineering
+framework, takes its libraries through Meson wraps: some from WrapDB, some
+from git branches. In a checkout of rizin, lock it in a shell with a C
+compiler. `-Dregenerate_cmds=disabled` is a rizin option that keeps the
+command tables rizin ships, so the lock run needs no PyYAML:
+
+```zsh
+git clone --branch v0.8.2 https://github.com/rizinorg/rizin
+cd rizin
+nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
+  -c nix run github:nix-purifiers/meson-purifier -- lock . -- -Dregenerate_cmds=disabled
+```
+
+Then add a `flake.nix` next to `meson.build`:
+
+```nix
+{
+  inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
+  inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
+
+  outputs = { nixpkgs, meson-purifier, ... }:
+    let
+      system = "x86_64-linux";
+      rizin = meson-purifier.lib.meson-purifier.buildMesonProject {
+        pkgs = nixpkgs.legacyPackages.${system};
+        pname = "rizin";
+        version = "0.8.2";
+        src = ./.;
+      };
+    in
+    {
+      packages.${system} = rizin.packages // {
+        default = rizin.packages.all;
+      };
+    };
+}
+```
+
+`git add flake.nix meson-purifier.lock.json`, and the targets of rizin are
+packages:
+
+```zsh
+nix build '.#rizin'
+echo 'mov eax, 1' | nix run '.#rz-asm' -- -a x86 -b 32 -
+```
+
+To package rizin without changing its repository, keep the lockfile in your
+own flake. Lock with `--lockfile` pointing into that flake, take rizin as a
+flake input, and pass the lockfile to the builder:
+
+```zsh
+nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
+  -c nix run github:nix-purifiers/meson-purifier -- \
+  lock --lockfile ../my-packages/rizin.lock.json . -- -Dregenerate_cmds=disabled
+```
+
+```nix
+{
+  inputs.rizin = {
+    url = "github:rizinorg/rizin/v0.8.2";
+    flake = false;
+  };
+  # meson-purifier and nixpkgs as above
+
+  outputs = { nixpkgs, meson-purifier, rizin, ... }: {
+    packages.x86_64-linux = (meson-purifier.lib.meson-purifier.buildMesonProject {
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      pname = "rizin";
+      version = "0.8.2";
+      src = rizin;
+      lockFile = ./rizin.lock.json;
+    }).packages;
+  };
+}
+```
 
 ## Credits
 
