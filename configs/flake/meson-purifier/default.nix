@@ -20,8 +20,8 @@
     # registry (pkg-overlays/): the package set applies it by default, and
     # the flake exports it as `pkgOverlays` and as the plain
     # `overlays.default`. The scope `meson-purifier` also holds the builder,
-    # which is a function and not a package, so `packages` below names the
-    # packages of the scope instead of exporting all of it.
+    # which is a function and not a package, so `packages` below exports
+    # the derivations of the scope instead of all of it.
     nixpkgs = {
       packages.export.enabled = false;
     };
@@ -35,8 +35,7 @@
   perSystem =
     { config, pkgs, ... }:
     {
-      packages = {
-        inherit (pkgs.meson-purifier) cli toolchain;
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.meson-purifier // {
         default = config.packages.toolchain;
       };
       devShells.default = pkgs.mkShell {
