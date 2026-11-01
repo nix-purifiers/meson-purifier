@@ -19,9 +19,12 @@ build dependencies. Arguments for `meson setup` go after `--`:
 nix run github:nix-purifiers/meson-purifier -- lock . -- -Dtests=false
 ```
 
-Meson has no lockfile of its own: the wrap files in `subprojects/` name
-each subproject, and `meson-purifier.lock.json` lies next to `meson.build`.
-Commit it. The flake's `overlays.default` adds
+Meson has no lockfile of its own. The wrap files in `subprojects/` name
+each subproject and belong to the build definition, so meson-purifier
+reads them from the source, and `buildMesonProject` and the commands take
+no separate build tool lockfile. `meson-purifier.lock.json` lies next to
+`meson.build`; commit it with the wrap files, which is the setup we
+recommend. The flake's `overlays.default` adds
 `buildMesonProject` to a package set, and a package written for
 `callPackage` takes it by name, like any other builder:
 
@@ -258,7 +261,8 @@ nix build '.#rizin'
 echo 'mov eax, 1' | nix run '.#rz-asm' -- -a x86 -b 32 -
 ```
 
-To package rizin without changing its repository, keep the lockfile in your
+A lockfile committed in the project, as above, is the setup we recommend.
+As an option, to package rizin without changing its repository, keep the lockfile in your
 own flake. Lock with `--lockfile` pointing into that flake, take rizin as a
 flake input, and pass the lockfile to the builder:
 

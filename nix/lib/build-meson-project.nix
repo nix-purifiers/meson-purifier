@@ -57,7 +57,15 @@
   pkg-config,
   runCommand,
   git,
-  callPackage,
+  # What the purifier library fetches and lays out the package cache with.
+  fetchurl,
+  fetchgit,
+  fetchhg,
+  fetchsvn,
+  unzip,
+  zstd,
+  python3,
+  writeText,
   # The library of the nix-purifiers (`lib.purifier`) and readLock
   # (read-lock.nix), which the overlay passes from the library of this
   # flake.
@@ -83,9 +91,23 @@ let
   });
   inherit (lock.meson) subprojectsDir installedWraps;
 
-  packageCache = callPackage ./package-cache.nix {
-    inherit purifierLib fetchers;
+  packageCache = import ./package-cache.nix {
+    inherit purifierLib;
     entries = purifierLib.entriesFor stdenv.hostPlatform.system lock;
+    packages = {
+      inherit
+        fetchurl
+        fetchgit
+        fetchhg
+        fetchsvn
+        runCommand
+        unzip
+        zstd
+        python3
+        writeText
+        ;
+    }
+    // fetchers;
   };
 
   # A changed build definition leaves the downloads alone and only the

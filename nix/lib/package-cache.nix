@@ -15,18 +15,19 @@
 #   wrapdb-wraps/   the wrap files Meson would install from
 #                   subprojects/wrapdb.json while it configures the project.
 #
-# The file is a package for callPackage. `fetchers` replaces nixpkgs'
-# fetchers in the library's fetchEntry, for mirrors or credentials.
+# `packages` are the fetchers and the packages that tree and fetchEntry
+# take by name: fetchurl, fetchgit, fetchhg, fetchsvn, runCommand, unzip,
+# zstd, python3 and writeText, with the fetchers a user passes to the
+# builder in place of nixpkgs' own.
 {
-  pkgs,
   purifierLib,
   entries,
-  fetchers ? { },
+  packages,
 }:
 purifierLib.tree (
-  fetchers
+  packages
   // {
-    inherit pkgs entries;
+    inherit entries;
     name = "meson-purifier-package-cache";
   }
 )

@@ -24,7 +24,20 @@ let
     inherit lockFile;
   };
 in
-pkgs.callPackage ./package-cache.nix {
+import ./package-cache.nix {
   inherit purifierLib;
   entries = purifierLib.entriesFor system lock;
+  packages = {
+    inherit (pkgs)
+      fetchurl
+      fetchgit
+      fetchhg
+      fetchsvn
+      runCommand
+      unzip
+      zstd
+      python3
+      writeText
+      ;
+  };
 }
