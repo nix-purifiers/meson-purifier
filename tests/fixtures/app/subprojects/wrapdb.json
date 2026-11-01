@@ -1,0 +1,11 @@
+{
+  "cjson": {
+    "dependency_names": [
+      "libcjson",
+      "libcjson_utils"
+    ],
+    "versions": [
+      "1.7.19-1"
+    ]
+  }
+}

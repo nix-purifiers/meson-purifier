@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MIT
+#
+# Checks every pull request and every push to main.
+#
+# `flake-check` builds the flake's checks: the fixture project offline from
+# its lockfile, the meson-purifier command with its unit tests, and the
+# formatting. `outside-the-sandbox` runs what needs the network or Nix
+# itself: it relocks the fixture and fails when the lockfile it writes
+# differs from the committed one, and it runs the interactive commands on a
+# copy of the fixture.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the checks
+        run: nix flake check --print-build-logs
+      - name: Evaluate the checks for every system
+        run: nix flake check --all-systems --no-build
+
+  outside-the-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build '.#toolchain' --out-link toolchain
+      - name: Relock the fixture
+        run: nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' -c tests/lock-run.sh toolchain
+      - name: Run the interactive commands offline
+        run: nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' -c tests/interactive.sh toolchain

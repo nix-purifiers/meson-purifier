@@ -1,0 +1,7 @@
+[wrap-svn]
+url = https://svn.apache.org/repos/asf/subversion/trunk/tools/examples
+revision = 1903580
+patch_directory = svn-examples
+
+[provide]
+svn-examples = svn_examples_dep

@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/benhoyt/inih.git
+revision = r62
+depth = 1
+
+[provide]
+inih = inih_dep

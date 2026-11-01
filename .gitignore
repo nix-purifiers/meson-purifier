@@ -1,0 +1,5 @@
+result
+result-*
+/toolchain
+.meson-purifier/
+build/

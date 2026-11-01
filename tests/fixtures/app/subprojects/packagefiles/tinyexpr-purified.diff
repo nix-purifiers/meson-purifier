@@ -1,0 +1,8 @@
+--- a/tinyexpr.h
++++ b/tinyexpr.h
+@@ -84,4 +84,5 @@
+ void te_free(te_expr *n);
+
++#define TINYEXPR_PURIFIED 1
+
+ #ifdef __cplusplus

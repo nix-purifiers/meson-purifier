@@ -1,0 +1,10 @@
+[wrap-file]
+directory = tinyexpr-ba2e32bbcc2d1e644a7e132d24c2f542821cabe0
+source_url = https://github.com/codeplea/tinyexpr/archive/ba2e32bbcc2d1e644a7e132d24c2f542821cabe0.tar.gz
+source_filename = tinyexpr-ba2e32bbcc2d1e644a7e132d24c2f542821cabe0.tar.gz
+source_hash = e3020f4f625ab846f4ad9adf0535e457ac830ebba1a960efed9d4e5ccfdf9045
+patch_directory = tinyexpr
+diff_files = tinyexpr-purified.diff
+
+[provide]
+tinyexpr = tinyexpr_dep

@@ -1,0 +1,7 @@
+[wrap-hg]
+url = https://hg.mozilla.org/hgcustom/hghooks
+revision = 62eddffd848dc8617804412e1de0832b3d49e2e7
+patch_directory = hghooks
+
+[provide]
+hghooks = hghooks_dep
