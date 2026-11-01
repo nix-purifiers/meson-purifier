@@ -24,23 +24,44 @@ each subproject and belong to the build definition, so meson-purifier
 reads them from the source, and the builder and the commands take
 no separate build tool lockfile. `meson-purifier.lock.json` lies next to
 `meson.build`; commit it with the wrap files, which is the setup we
-recommend. The flake's `overlays.default` adds one attribute to a package
-set, the scope `meson-purifier`, which holds the builder
-`buildMesonProject`, the command and the toolchain. A package written for
-`callPackage` takes the scope by name:
+recommend.
 
-```nix
-# package.nix
-{ meson-purifier }:
-(meson-purifier.buildMesonProject {
-  pname = "hello";
-  version = "1.0";
-  src = ./.;
-}).packages.hello
+Then build the project from its directory. This adds no Nix file to the
+project:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.meson-purifier.buildMesonProject {
+    pname = "hello";
+    version = "1.0";
+    src = ./.;
+  }).packages.hello'
 ```
 
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
+`packages.hello` is the build target named `hello`; `packages.all` is
+everything the project installs.
+
+To package the project with a flake, which can live in the project's
+repository or in another one, call the builder in the flake. The flake's
+`overlays.default` adds one attribute to a package set, the scope
+`meson-purifier`, which holds the builder `buildMesonProject`, the command
+and the toolchain:
+
 ```nix
-# flake.nix
 {
   inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
   inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
@@ -52,9 +73,17 @@ set, the scope `meson-purifier`, which holds the builder
         inherit system;
         overlays = [ meson-purifier.overlays.default ];
       };
+      hello = pkgs.meson-purifier.buildMesonProject {
+        pname = "hello";
+        version = "1.0";
+        src = ./.;
+      };
     in
     {
-      packages.${system}.default = pkgs.callPackage ./package.nix { };
+      packages.${system} = hello.packages // {
+        default = hello.packages.all;
+      };
+      checks.${system}.tests = hello.tests;
     };
 }
 ```
@@ -228,46 +257,34 @@ nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
   -c nix run github:nix-purifiers/meson-purifier -- lock . -- -Dregenerate_cmds=disabled
 ```
 
-Then add a `flake.nix` next to `meson.build`:
-
-```nix
-{
-  inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
-  inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
-
-  outputs = { nixpkgs, meson-purifier, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ meson-purifier.overlays.default ];
-      };
-      rizin = pkgs.meson-purifier.buildMesonProject {
-        pname = "rizin";
-        version = "0.8.2";
-        src = ./.;
-      };
-    in
-    {
-      packages.${system} = rizin.packages // {
-        default = rizin.packages.all;
-      };
-    };
-}
-```
-
-`git add flake.nix meson-purifier.lock.json`, and the targets of rizin are
-packages:
+Then build rizin from the same directory, which adds no Nix file to the
+checkout:
 
 ```zsh
-nix build '.#rizin'
-echo 'mov eax, 1' | nix run '.#rz-asm' -- -a x86 -b 32 -
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.meson-purifier.buildMesonProject {
+    pname = "rizin";
+    version = "0.8.2";
+    src = ./.;
+  }).packages.rizin'
+./result/bin/rizin -v
 ```
 
+Each build target of rizin is a package, so `.packages.rz-asm` builds the
+assembler. A flake that packages rizin calls the builder the way the
+Quickstart shows, with `pname = "rizin"` and `version = "0.8.2"`.
+
 A lockfile committed in the project, as above, is the setup we recommend.
-As an option, to package rizin without changing its repository, keep the lockfile in your
-own flake. Lock with `--lockfile` pointing into that flake, take rizin as a
-flake input, and pass the lockfile to the builder:
+As an option, to package rizin without changing its repository, keep the
+lockfile in a flake of your own. Lock with `--lockfile` pointing into that
+flake:
 
 ```zsh
 nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
@@ -275,24 +292,35 @@ nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
   lock --lockfile ../my-packages/rizin.lock.json . -- -Dregenerate_cmds=disabled
 ```
 
-```nix
-# rizin.nix in your flake, called with pkgs.callPackage ./rizin.nix { inherit rizin; }
-{ meson-purifier, rizin }:
-(meson-purifier.buildMesonProject {
-  pname = "rizin";
-  version = "0.8.2";
-  src = rizin;
-  lockFile = ./rizin.lock.json;
-}).packages.all
-```
-
-with rizin as a flake input that is not a flake:
+Then take rizin as a flake input that is not a flake, and pass the lockfile
+to the builder:
 
 ```nix
-inputs.rizin = {
-  url = "github:rizinorg/rizin/v0.8.2";
-  flake = false;
-};
+{
+  inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
+  inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
+  inputs.rizin = {
+    url = "github:rizinorg/rizin/v0.8.2";
+    flake = false;
+  };
+
+  outputs = { nixpkgs, meson-purifier, rizin, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ meson-purifier.overlays.default ];
+      };
+    in
+    {
+      packages.${system} = (pkgs.meson-purifier.buildMesonProject {
+        pname = "rizin";
+        version = "0.8.2";
+        src = rizin;
+        lockFile = ./rizin.lock.json;
+      }).packages;
+    };
+}
 ```
 
 ## Credits
