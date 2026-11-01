@@ -19,7 +19,9 @@ build dependencies. Arguments for `meson setup` go after `--`:
 nix run github:nix-purifiers/meson-purifier -- lock . -- -Dtests=false
 ```
 
-Commit `meson-purifier.lock.json`. The flake's `overlays.default` adds
+Meson has no lockfile of its own: the wrap files in `subprojects/` name
+each subproject, and `meson-purifier.lock.json` lies next to `meson.build`.
+Commit it. The flake's `overlays.default` adds
 `buildMesonProject` to a package set, and a package written for
 `callPackage` takes it by name, like any other builder:
 
@@ -94,7 +96,8 @@ meson compile -C build
 meson test -C build
 ```
 
-In a project with a lockfile, every `meson` command first builds the
+Meson has no plugin mechanism, so this `meson` is a wrapper around the real
+Meson. In a project with a lockfile, every `meson` command first builds the
 package cache of the lockfile through Nix and runs the real Meson with
 `MESON_PACKAGE_CACHE_DIR` pointing at it; `meson setup` also gets
 `--wrap-mode=nodownload`. Meson resolves a subproject from its package
@@ -112,6 +115,11 @@ wraps to their latest releases, and locks again with the `meson setup`
 arguments the lockfile records. `meson-purifier update zlib` updates only
 the named wraps. `meson-purifier lock` keeps the wraps as they are.
 
+Wrap files record no commit for a `wrap-git` that follows a branch, so
+`meson-purifier lock` resolves the branch to its current commit at each
+run, and a relock picks up new commits on it. A `revision` that names a tag
+or a commit keeps the lockfile the same from one lock to the next.
+
 `meson-purifier download` extracts every subproject of the main project
 into the subproject directory, offline, the way `meson subprojects download`
 does with the network. `meson-purifier publish <tag>` builds the `release`
@@ -125,8 +133,8 @@ shell can set that variable to the path it passes as `lockFile`.
 ## Working offline
 
 `meson-purifier prefetch` builds the package cache of the lockfile in the
-Nix store, keeps it under a GC root at `.meson-purifier/package-cache` in
-the project, and prints its path. After it, `meson setup`, `meson compile`,
+Nix store, keeps it under a GC root at `.meson-purifier/package-cache`
+beside the lockfile, and prints its path. After it, `meson setup`, `meson compile`,
 `meson test` and the editor work with the network cut off; Meson, ninja and
 the compilers come from the Nix store already.
 

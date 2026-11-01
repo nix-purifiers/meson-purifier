@@ -841,8 +841,8 @@ def check_fresh(project: Path) -> dict:
 
 
 def prefetch(project: Path) -> Path:
-    """Builds the package cache of the lockfile, with a GC root in the
-    project, and returns its store path.
+    """Builds the package cache of the lockfile, with a GC root in
+    .meson-purifier/ beside the lockfile, and returns its store path.
 
     The package cache is everything day-to-day work needs from the network:
     Meson, ninja and the compilers come from the Nix store already, and
@@ -854,8 +854,8 @@ def prefetch(project: Path) -> Path:
             "MESON_PURIFIER_NIX_LIB, MESON_PURIFIER_NIXPKGS and MESON_PURIFIER_LIBRARY "
             "are not set; run meson-purifier from the toolchain package"
         )
-    state = project / STATE_DIR
-    state.mkdir(exist_ok=True)
+    state = lock_path(project).parent / STATE_DIR
+    state.mkdir(parents=True, exist_ok=True)
     gitignore = state / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text("*\n")

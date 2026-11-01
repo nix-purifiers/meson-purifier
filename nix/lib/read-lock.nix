@@ -64,7 +64,11 @@ let
   contentLines = builtins.filter (line: builtins.match "[[:space:]]*" line == null) lines;
   object = contentLines != [ ] && builtins.match "[[:space:]]*\\{.*" (lib.head contentLines) != null;
 
-  lock = builtins.fromJSON text;
+  # Nix cannot catch a JSON parse error, so a lockfile that is not valid
+  # JSON fails evaluation, with this context naming the fix.
+  lock = builtins.addErrorContext "while reading ${name}, which is not valid JSON: run `meson-purifier lock` to write it again" (
+    builtins.fromJSON text
+  );
   supportedVersion = import ./lock-version.nix;
 
   fields = [
