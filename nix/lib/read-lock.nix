@@ -162,21 +162,13 @@ let
   ) lock.wrapFiles;
 
   under = directory: entry: entry // { path = "${directory}/${entry.path}"; };
-
-  # checkLock looks at the shape of `entries` and `outputs` before it
-  # reports the problems, so both stay empty for a lockfile with problems,
-  # which may not even be JSON.
-  usable = problems == [ ];
 in
 {
   purifier = "meson-purifier";
   inherit problems;
   entries =
-    if usable then
-      map (under "cache") (derived ++ lock.artifacts) ++ map (under "wrapdb-wraps") lock.installedWraps
-    else
-      [ ];
-  outputs = if usable then lock.outputs.targets else { };
+    map (under "cache") (derived ++ lock.artifacts) ++ map (under "wrapdb-wraps") lock.installedWraps;
+  outputs = lock.outputs.targets;
   meson = {
     inherit (lock) subprojectsDir setupArgs installedWraps;
     inherit (lock.outputs) files;
