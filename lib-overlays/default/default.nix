@@ -6,8 +6,9 @@
 #     The lockfile and the wrap files of a project, read into the lock in
 #     memory of the purifier contract (nix/lib/read-lock.nix).
 #
-# The builder needs a package set, so it is the package `buildMesonProject`
-# that the default package overlay adds.
+# The builder needs a package set, so it is the package
+# `meson-purifier.buildMesonProject` in the scope that the default package
+# overlay adds.
 { ... }:
 {
 

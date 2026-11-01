@@ -19,9 +19,11 @@
     # The packages are the `default` entry of this flake's package overlay
     # registry (pkg-overlays/): the package set applies it by default, and
     # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # `overlays.default`. The scope `meson-purifier` also holds the builder,
+    # which is a function and not a package, so `packages` below names the
+    # packages of the scope instead of exporting all of it.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
@@ -33,7 +35,10 @@
   perSystem =
     { config, pkgs, ... }:
     {
-      packages.default = config.packages.toolchain;
+      packages = {
+        inherit (pkgs.meson-purifier) cli toolchain;
+        default = config.packages.toolchain;
+      };
       devShells.default = pkgs.mkShell {
         packages = [ config.packages.toolchain ];
       };

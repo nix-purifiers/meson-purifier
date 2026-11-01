@@ -5,13 +5,13 @@
 #
 # The file is a package for callPackage: the first argument set is what it
 # takes from the package set, and the result is the builder. The flake's
-# `overlays.default` adds it to the package set as `buildMesonProject`, so
-# a package written for callPackage takes it like any other builder:
+# `overlays.default` adds it to the scope `pkgs.meson-purifier`, so a
+# package written for callPackage takes it through the scope:
 #
-#   { buildMesonProject }:
-#   (buildMesonProject { pname = "hello"; version = "1.0"; src = ./.; }).packages.hello
+#   { meson-purifier }:
+#   (meson-purifier.buildMesonProject { pname = "hello"; version = "1.0"; src = ./.; }).packages.hello
 #
-# and `buildMesonProject.override` replaces what it takes from the set.
+# and `meson-purifier.buildMesonProject.override` replaces what it takes.
 #
 # The builder takes the arguments of stdenv.mkDerivation and these:
 #

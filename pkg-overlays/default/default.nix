@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: MIT
 #
-# The default package overlay. It adds the packages of pkgs/ under
-# `pkgs.meson-purifier` (`.cli`, `.toolchain`), and the builder
-# `pkgs.buildMesonProject` (nix/lib/build-meson-project.nix) beside them,
-# where nixpkgs keeps its own builders, so a package written for
-# callPackage takes it by name. A consumer that lists this flake in
-# `projects` holds it as `meson-purifier/default`, which its package sets
-# apply by default.
+# The default package overlay. It adds one attribute to the package set,
+# the scope `pkgs.meson-purifier` (made with lib.makeScope), which holds the
+# packages of pkgs/ (`cli`, `toolchain`) and the builder `buildMesonProject`
+# (nix/lib/build-meson-project.nix). A package written for callPackage
+# takes the scope by name:
+#
+#   { meson-purifier }: (meson-purifier.buildMesonProject { ... }).packages.<name>
+#
+# `meson-purifier.overrideScope` replaces what the scope shares, and
+# `meson-purifier.buildMesonProject.override` what the builder takes. A
+# consumer that lists this flake in `projects` holds the overlay as
+# `meson-purifier/default`, which its package sets apply by default.
 #
 # The builder takes the purifier library and readLock from the library of
 # this flake. Interactive commands build the package cache with nix-build
@@ -29,14 +34,16 @@ in
     in
     added
     // {
-      meson-purifier = added.meson-purifier // {
-        toolchain = added.meson-purifier.toolchain.override {
-          purifierSource = closure-inputs.purifier.outPath;
-        };
-      };
-      buildMesonProject = final.callPackage ../../nix/lib/build-meson-project.nix {
-        purifierLib = closure-lib.purifier;
-        inherit (closure-lib.meson-purifier) readLock;
-      };
+      meson-purifier = added.meson-purifier.overrideScope (
+        self: super: {
+          toolchain = super.toolchain.override {
+            purifierSource = closure-inputs.purifier.outPath;
+          };
+          buildMesonProject = self.callPackage ../../nix/lib/build-meson-project.nix {
+            purifierLib = closure-lib.purifier;
+            inherit (closure-lib.meson-purifier) readLock;
+          };
+        }
+      );
     };
 }

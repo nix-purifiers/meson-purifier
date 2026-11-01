@@ -19,7 +19,7 @@ let
   pkgs' = pkgs.extend overlay;
   inherit (pkgs') lib runCommand;
   inherit (mesonPurifier) readLock;
-  inherit (pkgs') buildMesonProject;
+  inherit (pkgs'.meson-purifier) buildMesonProject;
   inherit (pkgs'.meson-purifier) cli;
 
   # The fixture project, which was locked with --force-fallback-for, so
@@ -221,27 +221,30 @@ in
       touch $out
     '';
 
-  # A package written for callPackage takes the builder from the package
-  # set, and buildMesonProject.override replaces what the builder takes.
+  # The overlay adds one attribute, the scope `meson-purifier`. A package
+  # written for callPackage takes the builder through the scope,
+  # buildMesonProject.override replaces what the builder takes, and
+  # overrideScope replaces what the scope shares.
   builder-package =
     let
-      consumer = pkgs'.callPackage (
-        { buildMesonProject }:
-        (buildMesonProject {
-          pname = "purifier-fixture";
-          version = "1.0.0";
-          src = ./fixtures/app;
-        }).packages.purifier-fixture
-      ) { };
-      overridden = buildMesonProject.override { ninja = pkgs'.samurai; };
-    in
-    assert consumer.drvPath == app.packages.purifier-fixture.drvPath;
-    assert
-      (overridden {
+      fixtureArgs = {
         pname = "purifier-fixture";
         version = "1.0.0";
         src = ./fixtures/app;
-      }).packages.all.drvPath != app.packages.all.drvPath;
+      };
+      consumer = pkgs'.callPackage (
+        { meson-purifier }: (meson-purifier.buildMesonProject fixtureArgs).packages.purifier-fixture
+      ) { };
+      overridden = buildMesonProject.override { ninja = pkgs'.samurai; };
+      scoped = pkgs'.meson-purifier.overrideScope (self: super: { ninja = pkgs'.samurai; });
+      added = builtins.attrNames (builtins.removeAttrs (overlay pkgs pkgs) [ "meson-purifier" ]);
+    in
+    assert added == [ ];
+    assert consumer.drvPath == app.packages.purifier-fixture.drvPath;
+    assert (overridden fixtureArgs).packages.all.drvPath != app.packages.all.drvPath;
+    assert
+      (scoped.buildMesonProject fixtureArgs).packages.all.drvPath == (overridden fixtureArgs)
+      .packages.all.drvPath;
     runCommand "builder-package" { } "touch $out";
 
   # The source release `meson dist` makes, which `publish` uploads.

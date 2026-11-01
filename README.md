@@ -21,17 +21,18 @@ nix run github:nix-purifiers/meson-purifier -- lock . -- -Dtests=false
 
 Meson has no lockfile of its own. The wrap files in `subprojects/` name
 each subproject and belong to the build definition, so meson-purifier
-reads them from the source, and `buildMesonProject` and the commands take
+reads them from the source, and the builder and the commands take
 no separate build tool lockfile. `meson-purifier.lock.json` lies next to
 `meson.build`; commit it with the wrap files, which is the setup we
-recommend. The flake's `overlays.default` adds
-`buildMesonProject` to a package set, and a package written for
-`callPackage` takes it by name, like any other builder:
+recommend. The flake's `overlays.default` adds one attribute to a package
+set, the scope `meson-purifier`, which holds the builder
+`buildMesonProject`, the command and the toolchain. A package written for
+`callPackage` takes the scope by name:
 
 ```nix
 # package.nix
-{ buildMesonProject }:
-(buildMesonProject {
+{ meson-purifier }:
+(meson-purifier.buildMesonProject {
   pname = "hello";
   version = "1.0";
   src = ./.;
@@ -68,8 +69,10 @@ recommend. The flake's `overlays.default` adds
   company mirror or credentials. They go to `fetchEntry` and `tree` of the
   [purifier](https://github.com/nix-purifiers/purifier) library.
 
-It takes `stdenv`, `meson`, `ninja` and `pkg-config` from the package set,
-and `buildMesonProject.override` replaces them.
+It takes `stdenv`, `meson`, `ninja`, `pkg-config` and the fetchers from the
+package set. `meson-purifier.buildMesonProject.override` replaces them for
+the builder, and `meson-purifier.overrideScope` replaces them for
+everything in the scope.
 
 The result has, all known at evaluation time from the lockfile:
 
@@ -239,7 +242,7 @@ Then add a `flake.nix` next to `meson.build`:
         inherit system;
         overlays = [ meson-purifier.overlays.default ];
       };
-      rizin = pkgs.buildMesonProject {
+      rizin = pkgs.meson-purifier.buildMesonProject {
         pname = "rizin";
         version = "0.8.2";
         src = ./.;
@@ -274,8 +277,8 @@ nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
 
 ```nix
 # rizin.nix in your flake, called with pkgs.callPackage ./rizin.nix { inherit rizin; }
-{ buildMesonProject, rizin }:
-(buildMesonProject {
+{ meson-purifier, rizin }:
+(meson-purifier.buildMesonProject {
   pname = "rizin";
   version = "0.8.2";
   src = rizin;
