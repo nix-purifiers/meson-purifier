@@ -92,7 +92,9 @@
       "git": {
         "url": "https://github.com/benhoyt/inih.git",
         "rev": "26254ee9de7681f8825433415443e7116ff24b98",
-        "submodules": false
+        "submodules": false,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="
     },

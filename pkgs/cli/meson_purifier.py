@@ -332,10 +332,18 @@ def lock_wrap(wrap, cache: Path, work: Path, artifacts: dict) -> None:
         target = cache / wrap.directory
         if not target.exists():
             target.symlink_to(store_path)
+        # Meson copies a checkout from the package cache into the subproject
+        # directory as plain files, so the checkout carries no .git.
         add(
             {
                 "path": wrap.directory,
-                "git": {"url": values["url"], "rev": rev, "submodules": submodules},
+                "git": {
+                    "url": values["url"],
+                    "rev": rev,
+                    "submodules": submodules,
+                    "leaveDotGit": False,
+                    "commitObject": None,
+                },
                 "hash": nar,
             }
         )

@@ -39,8 +39,13 @@ let
         inherit (entry) hash;
       }
     else if entry ? git then
+      # meson-purifier writes every git entry with leaveDotGit = false and
+      # commitObject = null.
+      assert
+        !entry.git.leaveDotGit
+        || throw "meson-purifier: ${toString lockFile} has a git entry for ${entry.path} with leaveDotGit, which meson-purifier does not write";
       fetchgit {
-        inherit (entry.git) url rev;
+        inherit (entry.git) url rev leaveDotGit;
         fetchSubmodules = entry.git.submodules;
         inherit (entry) hash;
       }
