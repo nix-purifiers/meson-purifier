@@ -54,7 +54,7 @@ class Helpers(unittest.TestCase):
             )
             self.assertEqual(mp.subprojects_dir_of(project), "deps")
 
-    def test_inputs_hash_reads_only_wraps(self):
+    def test_wraps_hash_reads_only_wraps(self):
         with tempfile.TemporaryDirectory() as d:
             project = Path(d)
             write(project / "subprojects" / "b.wrap", "B")
@@ -63,12 +63,14 @@ class Helpers(unittest.TestCase):
             expected = hashlib.sha256(
                 b"a.wrap\nA\nb.wrap\nB\nwrapdb.json\n{}\n"
             ).hexdigest()
-            self.assertEqual(mp.inputs_hash(project, "subprojects"), expected)
-            # Extracted subprojects and other files leave the hash alone.
+            self.assertEqual(mp.wraps_hash(project, "subprojects"), expected)
+            # Extracted subprojects, other files and the build definition
+            # leave the hash alone.
             write(project / "subprojects" / "a-1.0" / "meson.build", "x")
             write(project / "subprojects" / "packagecache" / "a.tar.gz", "x")
             write(project / "subprojects" / "notes.txt", "x")
-            self.assertEqual(mp.inputs_hash(project, "subprojects"), expected)
+            write(project / "meson.build", "project('p')\n")
+            self.assertEqual(mp.wraps_hash(project, "subprojects"), expected)
             # So do the redirects Meson writes, and the wraps the lockfile
             # installs.
             write(
@@ -77,14 +79,38 @@ class Helpers(unittest.TestCase):
             )
             write(project / "subprojects" / "d.wrap", "D")
             self.assertEqual(
-                mp.inputs_hash(project, "subprojects", frozenset({"d.wrap"})), expected
+                mp.wraps_hash(project, "subprojects", frozenset({"d.wrap"})), expected
             )
             (project / "subprojects" / "d.wrap").unlink()
             write(project / "Cargo.lock", "C")
             self.assertEqual(
-                mp.inputs_hash(project, "subprojects"),
+                mp.wraps_hash(project, "subprojects"),
                 hashlib.sha256(
                     b"a.wrap\nA\nb.wrap\nB\nwrapdb.json\n{}\nCargo.lock\nC\n"
+                ).hexdigest(),
+            )
+
+    def test_definition_files_and_hash(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            write(project / "meson.build", "R")
+            write(project / "meson.options", "O")
+            write(project / "src" / "meson.build", "S")
+            write(project / "src" / "main.c", "x")
+            # Left out: the subproject directory, dot directories and build
+            # directories.
+            write(project / "subprojects" / "a" / "meson.build", "x")
+            write(project / ".git" / "meson.build", "x")
+            write(project / "build" / "meson-private" / "x", "x")
+            write(project / "build" / "meson.build", "x")
+            self.assertEqual(
+                mp.definition_files(project, "subprojects"),
+                ["meson.build", "meson.options", "src/meson.build"],
+            )
+            self.assertEqual(
+                mp.definition_hash(project, "subprojects"),
+                hashlib.sha256(
+                    b"meson.build\nR\nmeson.options\nO\nsrc/meson.build\nS\n"
                 ).hexdigest(),
             )
 
@@ -101,22 +127,225 @@ class Helpers(unittest.TestCase):
             mp.meson_args(["compile", "-C", "build"]), ["compile", "-C", "build"]
         )
 
-    def test_check_fresh(self):
+    def test_needs_lock(self):
+        for args in (
+            ["setup", "build"],
+            ["compile", "-C", "build"],
+            ["test"],
+            ["install"],
+            ["configure", "build"],
+            ["subprojects", "download"],
+            ["-Dfoo=bar", "build"],
+        ):
+            self.assertTrue(mp.needs_lock(args), args)
+        for args in (
+            [],
+            ["--version"],
+            ["wrap", "install", "zlib"],
+            ["wrap", "update", "zlib"],
+            ["subprojects", "update"],
+            ["init"],
+        ):
+            self.assertFalse(mp.needs_lock(args), args)
+
+
+def lockfile(project: Path, **fields) -> dict:
+    data = {
+        "version": mp.LOCK_VERSION,
+        "subprojectsDir": "subprojects",
+        "wrapsHash": mp.wraps_hash(project, "subprojects"),
+        "definitionHash": mp.definition_hash(project, "subprojects"),
+        "setupArgs": [],
+        "outputs": {"targets": {}, "files": []},
+        "installedWraps": [],
+        "artifacts": [],
+    }
+    data.update(fields)
+    return data
+
+
+class Lockfile(unittest.TestCase):
+    def test_fresh_lockfile(self):
         with tempfile.TemporaryDirectory() as d:
             project = Path(d)
             write(project / "subprojects" / "a.wrap", "A")
-            lock = {
-                "version": mp.LOCK_VERSION,
-                "subprojectsDir": "subprojects",
-                "inputsHash": mp.inputs_hash(project, "subprojects"),
-                "installedWraps": [],
-                "artifacts": [],
-            }
+            write(project / "meson.build", "project('p')\n")
+            lock = lockfile(project)
             mp.write_lock(project, lock)
             self.assertEqual(mp.check_fresh(project), lock)
+            # An edited build definition leaves the downloads current.
+            write(project / "meson.build", "project('p', 'c')\n")
+            self.assertEqual(mp.check_fresh(project), lock)
+
+    def test_stale_lockfile(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            write(project / "subprojects" / "a.wrap", "A")
+            mp.write_lock(project, lockfile(project))
             write(project / "subprojects" / "a.wrap", "changed")
-            with self.assertRaises(mp.PurifierError):
+            with self.assertRaisesRegex(mp.PurifierError, "run `meson-purifier lock`"):
                 mp.check_fresh(project)
+
+    def test_malformed_lockfile(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            (project / mp.LOCK_NAME).write_text('{\n<<<<<<< HEAD\n  "version": 2\n')
+            with self.assertRaisesRegex(mp.PurifierError, "not valid JSON"):
+                mp.read_lock(project)
+
+    def test_lockfile_of_another_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            mp.write_lock(project, lockfile(project, version=1))
+            with self.assertRaisesRegex(mp.PurifierError, "lock format version 1"):
+                mp.read_lock(project)
+
+    def test_lockfile_missing_a_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            lock = lockfile(project)
+            del lock["artifacts"]
+            mp.write_lock(project, lock)
+            with self.assertRaisesRegex(mp.PurifierError, "lacks artifacts"):
+                mp.read_lock(project)
+
+
+class Entries(unittest.TestCase):
+    """The entry the lock run records for each kind of wrap, with the
+    fetchers replaced."""
+
+    def entry(self, wrap_text: str, **fetchers) -> list:
+        from mesonbuild.wrap.wrap import PackageDefinition
+
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d)
+            write(work / "subprojects" / "w.wrap", wrap_text)
+            (work / "cache").mkdir()
+            wrap = PackageDefinition.from_wrap_file(
+                str(work / "subprojects" / "w.wrap")
+            )
+            artifacts: dict = {}
+            with mock.patch.multiple(mp, **fetchers):
+                mp.lock_wrap(wrap, work / "cache", work, artifacts)
+            return list(artifacts.values())
+
+    def test_wrap_file(self):
+        digest = hashlib.sha256(b"x").hexdigest()
+        calls = []
+
+        def prefetch(urls, name, expected):
+            calls.append((urls, name, expected))
+            return urls[0], "/nix/store/x"
+
+        entries = self.entry(
+            "[wrap-file]\ndirectory = z-1\nsource_url = https://a/z.tar.gz\n"
+            "source_fallback_url = https://b/z.tar.gz\nsource_filename = z.tar.gz\n"
+            f"source_hash = {digest.upper()}\npatch_url = https://a/p.zip\n"
+            f"patch_filename = p.zip\npatch_hash = {digest}\n",
+            prefetch_file=prefetch,
+        )
+        sri = mp.sri_from_hex(digest)
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "path": "z.tar.gz",
+                    "url": "https://a/z.tar.gz",
+                    "mirrors": ["https://b/z.tar.gz"],
+                    "hash": sri,
+                },
+                {"path": "p.zip", "url": "https://a/p.zip", "mirrors": [], "hash": sri},
+            ],
+        )
+        self.assertEqual(calls[0][0], ["https://a/z.tar.gz", "https://b/z.tar.gz"])
+
+    def test_wrap_file_in_packagefiles(self):
+        # An archive the project carries needs no download.
+        digest = hashlib.sha256(b"x").hexdigest()
+        entries = self.entry(
+            f"[wrap-file]\ndirectory = z\nsource_filename = z.tar.gz\nsource_hash = {digest}\n",
+            prefetch_file=mock.Mock(side_effect=AssertionError("no download")),
+        )
+        self.assertEqual(entries, [])
+
+    def test_wrap_git(self):
+        prefetch = mock.Mock(return_value=("c" * 40, "sha256-git", "/nix/store/g"))
+        entries = self.entry(
+            "[wrap-git]\nurl = https://example.org/g.git\nrevision = v1\n"
+            "directory = g-1\nclone-recursive = true\n",
+            prefetch_git=prefetch,
+        )
+        prefetch.assert_called_once_with("https://example.org/g.git", "v1", True)
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "path": "g-1",
+                    "git": {
+                        "url": "https://example.org/g.git",
+                        "rev": "c" * 40,
+                        "submodules": True,
+                        "leaveDotGit": False,
+                        "commitObject": None,
+                    },
+                    "hash": "sha256-git",
+                }
+            ],
+        )
+
+    def test_wrap_hg(self):
+        fetch = mock.Mock(return_value=("n" * 40, "sha256-hg"))
+        entries = self.entry(
+            "[wrap-hg]\nurl = https://example.org/h\nrevision = tip\n", fetch_hg=fetch
+        )
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "path": "w",
+                    "hg": {
+                        "url": "https://example.org/h",
+                        "rev": "n" * 40,
+                        "subrepos": True,
+                    },
+                    "hash": "sha256-hg",
+                }
+            ],
+        )
+
+    def test_wrap_svn(self):
+        fetch = mock.Mock(return_value=("123", "sha256-svn"))
+        entries = self.entry(
+            "[wrap-svn]\nurl = https://example.org/s/trunk\nrevision = HEAD\n",
+            fetch_svn=fetch,
+        )
+        self.assertEqual(
+            entries,
+            [
+                {
+                    "path": "w",
+                    "svn": {
+                        "url": "https://example.org/s/trunk",
+                        "rev": "123",
+                        "ignoreExternals": False,
+                        "ignoreKeywords": False,
+                    },
+                    "hash": "sha256-svn",
+                }
+            ],
+        )
+
+    def test_svn_proxy_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.dict(
+                "os.environ", {"https_proxy": "http://user:p%40ss@proxy.example:3128"}
+            ):
+                config = mp.svn_config_dir(Path(d))
+            servers = (config / "servers").read_text()
+            self.assertIn("http-proxy-host = proxy.example", servers)
+            self.assertIn("http-proxy-port = 3128", servers)
+            self.assertIn("http-proxy-username = user", servers)
+            self.assertIn("http-proxy-password = p@ss", servers)
 
 
 class LockRun(unittest.TestCase):
@@ -174,7 +403,10 @@ class LockRun(unittest.TestCase):
             self.assertEqual(lock["artifacts"], [])
             self.assertEqual(lock["outputs"], outputs)
             self.assertEqual(lock["setupArgs"], ["-Dx=y"])
-            self.assertEqual(lock["inputsHash"], mp.inputs_hash(project, "subprojects"))
+            self.assertEqual(lock["wrapsHash"], mp.wraps_hash(project, "subprojects"))
+            self.assertEqual(
+                lock["definitionHash"], mp.definition_hash(project, "subprojects")
+            )
             # The lock run extracts subprojects in a copy, not in the project.
             self.assertFalse((subprojects / "a-1.0").exists())
 

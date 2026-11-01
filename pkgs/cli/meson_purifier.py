@@ -18,11 +18,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 from pathlib import Path
 
 LOCK_NAME = "meson-purifier.lock.json"
-LOCK_VERSION = 1
+LOCK_VERSION = 2
 # Where interactive commands keep the GC root of the realized package cache,
 # relative to the project root.
 STATE_DIR = ".meson-purifier"
@@ -112,16 +113,15 @@ def definition_files(project: Path, subprojects_dir: str) -> list:
     return sorted(found)
 
 
-def inputs_hash(
+def wraps_hash(
     project: Path, subprojects_dir: str, installed: frozenset = frozenset()
 ) -> str:
-    """The hash of the files a lock run reads; nix/lib/inputs-hash.nix has
-    the same rule.
+    """The hash of the files that decide what a lock run downloads;
+    nix/lib/inputs-hash.nix has the same rule.
 
-    They are the wrap files and wrapdb.json in the subproject directory, a
-    Cargo.lock at the project root, and the build definition (see
-    definition_files), each as its path, a newline, its contents and a
-    newline, in byte order of the paths within each group. Two kinds of wrap
+    They are the wrap files and wrapdb.json in the subproject directory, and
+    a Cargo.lock at the project root, each as its name, a newline, its
+    contents and a newline, in byte order of the names. Two kinds of wrap
     file are left out. The ones named in `installed` are the wraps the
     lockfile itself installs from wrapdb.json. A file that starts with
     [wrap-redirect] only selects a wrap that a subproject carries; Meson
@@ -146,6 +146,17 @@ def inputs_hash(
     cargo = project / "Cargo.lock"
     if cargo.is_file():
         data += b"Cargo.lock\n" + cargo.read_bytes() + b"\n"
+    return hashlib.sha256(data).hexdigest()
+
+
+def definition_hash(project: Path, subprojects_dir: str) -> str:
+    """The hash of the build definition, which decides the outputs the lock
+    run records; nix/lib/inputs-hash.nix has the same rule.
+
+    Each file of definition_files counts as its path, a newline, its
+    contents and a newline, in byte order of the paths.
+    """
+    data = b""
     for rel in definition_files(project, subprojects_dir):
         data += rel.encode() + b"\n" + (project / rel).read_bytes() + b"\n"
     return hashlib.sha256(data).hexdigest()
@@ -579,9 +590,10 @@ def lock(project: Path, setup_args: list) -> dict:
         return {
             "version": LOCK_VERSION,
             "subprojectsDir": subprojects_dir,
-            "inputsHash": inputs_hash(
+            "wrapsHash": wraps_hash(
                 project, subprojects_dir, installed_names(installed)
             ),
+            "definitionHash": definition_hash(project, subprojects_dir),
             "setupArgs": setup_args,
             "outputs": outputs,
             "installedWraps": installed,
@@ -601,7 +613,7 @@ def lock(project: Path, setup_args: list) -> dict:
 def write_lock(project: Path, data: dict) -> None:
     text = json.dumps(data, indent=2) + "\n"
     (project / LOCK_NAME).write_text(text)
-    log(f"wrote {project / LOCK_NAME} with {len(data['artifacts'])} downloads")
+    log(f"wrote {project / LOCK_NAME} with {len(data.get('artifacts', []))} downloads")
 
 
 # ---------------------------------------------------------------------------
@@ -622,17 +634,54 @@ def installed_names(entries: list) -> frozenset:
     return frozenset(entry["path"] for entry in entries)
 
 
-def check_fresh(project: Path) -> dict:
-    data = json.loads((project / LOCK_NAME).read_text())
-    if data.get("version") != LOCK_VERSION:
+LOCK_FIELDS = (
+    "subprojectsDir",
+    "wrapsHash",
+    "definitionHash",
+    "setupArgs",
+    "outputs",
+    "installedWraps",
+    "artifacts",
+)
+
+
+def read_lock(project: Path) -> dict:
+    """The lockfile of the project, with its format checked."""
+    path = project / LOCK_NAME
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
         raise PurifierError(
-            f"{project / LOCK_NAME} has lock format version {data.get('version')}; "
-            f"this meson-purifier reads version {LOCK_VERSION}. Run `meson-purifier lock`."
+            f"{path} is not valid JSON ({e}); if a merge left conflict markers in it, "
+            "run `meson-purifier lock` to write it again"
+        ) from e
+    if not isinstance(data, dict) or data.get("version") != LOCK_VERSION:
+        version = data.get("version") if isinstance(data, dict) else None
+        raise PurifierError(
+            f"{path} has lock format version {version}; this meson-purifier reads version "
+            f"{LOCK_VERSION}. Run `meson-purifier lock`."
         )
-    installed = installed_names(data.get("installedWraps", []))
-    if inputs_hash(project, data["subprojectsDir"], installed) != data["inputsHash"]:
+    missing = [field for field in LOCK_FIELDS if field not in data]
+    if missing:
         raise PurifierError(
-            f"the wrap files changed since {LOCK_NAME} was written; run `meson-purifier lock`"
+            f"{path} lacks {', '.join(missing)}; run `meson-purifier lock` to write it again"
+        )
+    return data
+
+
+def check_fresh(project: Path) -> dict:
+    """The lockfile, if it holds every download the wrap files name.
+
+    An edited meson.build leaves the downloads alone, so interactive commands
+    accept it; only the outputs the lockfile records can be out of date
+    then, which the Nix build reports.
+    """
+    data = read_lock(project)
+    installed = installed_names(data["installedWraps"])
+    if wraps_hash(project, data["subprojectsDir"], installed) != data["wrapsHash"]:
+        raise PurifierError(
+            f"the wrap files changed since {LOCK_NAME} was written, so it may lack a "
+            "download; run `meson-purifier lock`"
         )
     return data
 
@@ -650,22 +699,30 @@ def realize(project: Path) -> Path:
     if not gitignore.exists():
         gitignore.write_text("*\n")
     link = state / "package-cache"
-    run(
-        [
-            "nix-build",
-            "--quiet",
-            f"{NIX_LIB}/interactive.nix",
-            "--arg",
-            "lockFile",
-            str((project / LOCK_NAME).resolve()),
-            "--arg",
-            "nixpkgs",
-            NIXPKGS,
-            "--out-link",
-            str(link),
-        ],
-        stdout=subprocess.DEVNULL,
-    )
+    try:
+        run(
+            [
+                "nix-build",
+                "--quiet",
+                f"{NIX_LIB}/interactive.nix",
+                "--arg",
+                "lockFile",
+                str((project / LOCK_NAME).resolve()),
+                "--arg",
+                "nixpkgs",
+                NIXPKGS,
+                "--out-link",
+                str(link),
+            ],
+            stdout=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as e:
+        raise PurifierError(
+            f"Nix could not build the package cache of {LOCK_NAME} (see its error above). "
+            "A hash mismatch means a download differs from the one the lockfile records: "
+            "the lockfile was edited, or an upstream file changed. Run `meson-purifier lock` "
+            "to record the current files."
+        ) from e
     return link.resolve()
 
 
@@ -702,6 +759,44 @@ def exec_meson(args: list, env: dict) -> None:
     os.execvpe(meson, [meson, *meson_args(args)], env)
 
 
+# Meson commands that change wrap files or need the network by design: they
+# run as they are, so that a dependency can be added or upgraded before the
+# lockfile is renewed.
+UNLOCKED_COMMANDS = ("wrap", "init", "env2mfile", "format", "fmt", "rewrite", "help")
+# What Meson reports when a subproject is missing from the package cache.
+NOT_DOWNLOADABLE = "Automatic wrap-based subproject downloading is disabled"
+
+
+def needs_lock(args: list) -> bool:
+    if not args or args[0].startswith("-"):
+        # `meson --version`, or the old `meson [options] builddir` form of
+        # setup, which takes the lock like `meson setup`.
+        return bool(args) and args[0] not in ("-v", "--version", "-h", "--help")
+    if args[0] in UNLOCKED_COMMANDS:
+        return False
+    if args[0] == "subprojects":
+        return len(args) > 1 and args[1] == "download"
+    return True
+
+
+def missing_subproject_hint(project: Path, started: float) -> None:
+    """After a failed meson command, says what to do if Meson stopped at a
+    subproject that the lockfile does not hold."""
+    for log_file in project.glob("**/meson-logs/meson-log.txt"):
+        try:
+            if log_file.stat().st_mtime < started:
+                continue
+            if NOT_DOWNLOADABLE in log_file.read_text(errors="replace"):
+                log(
+                    f"Meson needs a subproject that {LOCK_NAME} does not hold, so it would "
+                    "have downloaded it. Run `meson-purifier lock`, with the options you "
+                    "configure with after `--` if they choose the subprojects."
+                )
+                return
+        except OSError:
+            continue
+
+
 # ---------------------------------------------------------------------------
 # Commands
 
@@ -713,6 +808,8 @@ def run_meson(args: list) -> int:
         project = find_project(Path.cwd())
     except PurifierError:
         exec_meson(args, dict(os.environ))
+    if not needs_lock(args):
+        exec_meson(args, dict(os.environ))
     try:
         env = meson_env(project)
     except PurifierError as e:
@@ -721,8 +818,16 @@ def run_meson(args: list) -> int:
     except subprocess.CalledProcessError as e:
         log(f"{e.cmd[0]} failed with exit status {e.returncode}")
         return e.returncode or 1
-    exec_meson(args, env)
-    return 0
+    started = time.time()
+    meson = real_meson()
+    try:
+        result = subprocess.run([meson, *meson_args(args)], env=env, check=False)
+    except KeyboardInterrupt:
+        # Meson received the interrupt as well and stops on its own.
+        return 130
+    if result.returncode != 0:
+        missing_subproject_hint(project, started)
+    return result.returncode
 
 
 def main(argv: list) -> int:
@@ -741,7 +846,7 @@ def main(argv: list) -> int:
         "setup_args",
         nargs="*",
         help="after --: arguments for `meson setup` when the lock run configures the "
-        "project, which it does only to find the wraps wrapdb.json installs",
+        "project to find its outputs and the wraps wrapdb.json installs",
     )
     p_realize = sub.add_parser(
         "realize", help="build the package cache and print its path"
@@ -768,6 +873,9 @@ def main(argv: list) -> int:
             project = find_project(Path(args.project).resolve())
             env = meson_env(project)
             run([real_meson(), "subprojects", "download"], cwd=project, env=env)
+        elif args.command == "meson":
+            # Reached only with no arguments after `meson`.
+            return run_meson([])
     except PurifierError as e:
         log(str(e))
         return 1

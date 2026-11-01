@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: MIT
 #
-# Checks every pull request and every push to main.
+# Checks every pull request and every push to main, on x86_64-linux and
+# aarch64-linux runners.
 #
 # `flake-check` builds the flake's checks: the fixture project offline from
-# its lockfile, the meson-purifier command with its unit tests, and the
-# formatting. `outside-the-sandbox` runs what needs the network or Nix
-# itself: it relocks the fixture and fails when the lockfile it writes
-# differs from the committed one, and it runs the interactive commands on a
-# copy of the fixture.
+# its lockfile, the negative checks, the meson-purifier command with its
+# unit tests, and the formatting. `outside-the-sandbox` runs what needs the
+# network or Nix itself: it relocks the fixture and fails when the lockfile
+# it writes differs from the committed one, and it runs the interactive
+# commands and their error cases on copies of the fixture.
 name: check
 
 on:
@@ -20,7 +21,11 @@ permissions:
 
 jobs:
   flake-check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
@@ -30,7 +35,11 @@ jobs:
         run: nix flake check --all-systems --no-build
 
   outside-the-sandbox:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
@@ -39,4 +48,6 @@ jobs:
       - name: Relock the fixture
         run: nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' -c tests/lock-run.sh toolchain
       - name: Run the interactive commands offline
-        run: nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' -c tests/interactive.sh toolchain
+        run: >
+          nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' 'nixpkgs#clang-tools'
+          -c tests/interactive.sh toolchain

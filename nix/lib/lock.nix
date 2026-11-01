@@ -43,14 +43,43 @@ let
     !(entry ? url)
     || builtins.isList (entry.mirrors or null)
     || throw "meson-purifier: ${toString lockFile} has an entry for ${entry.path} without a `mirrors` list. Run `meson-purifier lock`.";
+
+  # Every entry has exactly one source: a URL, or a git, hg or svn checkout.
+  checkKind =
+    entry:
+    builtins.length (
+      builtins.filter (kind: entry ? ${kind}) [
+        "url"
+        "git"
+        "hg"
+        "svn"
+      ]
+    ) == 1
+    && entry ? hash
+    || throw "meson-purifier: ${toString lockFile} has an entry for ${
+      builtins.toJSON (entry.path or null)
+    } without exactly one url, git, hg or svn source and a hash. Run `meson-purifier lock` to write it again.";
+
+  fields = [
+    "subprojectsDir"
+    "wrapsHash"
+    "definitionHash"
+    "setupArgs"
+    "outputs"
+    "installedWraps"
+    "artifacts"
+  ];
+  missingFields = builtins.filter (field: !(lock ? ${field})) fields;
 in
 assert
-  lock.version == supportedVersion
-  || throw "meson-purifier: ${toString lockFile} has lock format version ${toString lock.version}; this library reads version ${toString supportedVersion}. Run `meson-purifier lock` with the meson-purifier revision of this library.";
+  lock.version or null == supportedVersion
+  || throw "meson-purifier: ${toString lockFile} has lock format version ${
+    builtins.toJSON (lock.version or null)
+  }; this library reads version ${toString supportedVersion}. Run `meson-purifier lock` with the meson-purifier revision of this library.";
 assert
-  lock ? outputs && lock ? setupArgs
-  || throw "meson-purifier: ${toString lockFile} records no outputs. Run `meson-purifier lock`.";
-assert builtins.all (entry: checkPath entry && checkMirrors entry) (
+  missingFields == [ ]
+  || throw "meson-purifier: ${toString lockFile} lacks ${builtins.concatStringsSep ", " missingFields}. Run `meson-purifier lock` to write it again.";
+assert builtins.all (entry: checkPath entry && checkKind entry && checkMirrors entry) (
   lock.artifacts ++ lock.installedWraps
 );
 lock

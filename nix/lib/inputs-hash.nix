@@ -1,15 +1,26 @@
 # SPDX-License-Identifier: MIT
 #
-# The hash of the files a lock run reads, which the lockfile records as
-# `inputsHash`. `meson-purifier lock` computes it with the same rule
-# (inputs_hash in pkgs/cli/meson_purifier.py): the wrap files and
-# wrapdb.json in the subproject directory, a Cargo.lock at the project root,
-# and the build definition, each as its path, a newline, its contents and a
-# newline, in byte order of the paths within each group. Two kinds of wrap file are left out. The ones named in
-# `installed` are the wraps the lockfile itself installs from wrapdb.json. A
-# file that starts with [wrap-redirect] only selects a wrap that a
-# subproject carries; Meson writes one when it uses such a wrap, and the
-# lock run locks every wrap that a subproject carries.
+# The two hashes a lockfile records about the project it was made from.
+# `meson-purifier lock` computes them with the same rules (wraps_hash and
+# definition_hash in pkgs/cli/meson_purifier.py).
+#
+#   wraps        the files that decide what a lock run downloads: the wrap
+#                files and wrapdb.json in the subproject directory, and a
+#                Cargo.lock at the project root, each as its name, a
+#                newline, its contents and a newline, in byte order of the
+#                names. Two kinds of wrap file are left out. The ones named
+#                in `installed` are the wraps the lockfile itself installs
+#                from wrapdb.json. A file that starts with [wrap-redirect]
+#                only selects a wrap that a subproject carries; Meson writes
+#                one when it uses such a wrap, and the lock run locks every
+#                wrap that a subproject carries.
+#   definition   the build definition, which decides the outputs the lock
+#                run records: meson.build and option files, each as its
+#                path relative to the project root, a newline, its contents
+#                and a newline, in byte order of the paths. The subproject
+#                directory, directories whose name starts with a dot, and
+#                Meson build directories (the ones holding meson-private)
+#                are left out.
 #
 # Needs no nixpkgs. `project` is the project root as a path.
 {
@@ -34,10 +45,6 @@ let
   part = name: path: name + "\n" + builtins.readFile path + "\n";
   cargoLock = project + "/Cargo.lock";
 
-  # The build definition: meson.build and option files, as paths relative
-  # to the project root. The subproject directory, directories whose name
-  # starts with a dot, and Meson build directories (the ones holding
-  # meson-private) are left out.
   definitionNames = [
     "meson.build"
     "meson.options"
@@ -69,10 +76,13 @@ let
         [ ]
     ) (builtins.attrNames dirEntries);
   definition = builtins.sort builtins.lessThan (definitionFiles project "");
-
-  text =
+in
+{
+  wraps = builtins.hashString "sha256" (
     builtins.concatStringsSep "" (map (name: part name (directory + "/${name}")) names)
     + (if builtins.pathExists cargoLock then part "Cargo.lock" cargoLock else "")
-    + builtins.concatStringsSep "" (map (rel: part rel (project + "/${rel}")) definition);
-in
-builtins.hashString "sha256" text
+  );
+  definition = builtins.hashString "sha256" (
+    builtins.concatStringsSep "" (map (rel: part rel (project + "/${rel}")) definition)
+  );
+}

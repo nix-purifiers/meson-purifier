@@ -1,7 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "subprojectsDir": "subprojects",
-  "inputsHash": "4abc4e2f442427760991a91237ed930b15336cacb8d4268af781071274587445",
+  "wrapsHash": "bb3937094c035b179a85159f24efc64d2633bbf8993b0b0be983aca4e6ac2ca0",
+  "definitionHash": "3301913da7b44e53cff4d8922bc7e8c76cb2be4167fae2f2996bdfdf8512035a",
   "setupArgs": [
     "--force-fallback-for=zlib,inih,libcjson,yaml-0.1"
   ],

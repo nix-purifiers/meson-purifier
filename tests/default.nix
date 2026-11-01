@@ -78,21 +78,48 @@ in
   # the toolchain around it.
   inherit (pkgs'.meson-purifier) cli toolchain;
 
-  # The library rejects a lockfile of another format version, a lockfile
-  # older than the wrap files and build definition beside it, and a path
-  # that leaves the package cache.
+  # The library rejects, at evaluation time, a lockfile of another format
+  # version, a lockfile older than the wrap files beside it, a lockfile
+  # missing a field, an entry with no source, and a path that leaves the
+  # package cache. A lockfile older than the build definition evaluates,
+  # with a warning.
   lock-checks =
     assert evaluates (appWithLock ./fixtures/app/meson-purifier.lock.json);
     assert
       !evaluates (
         appWithLock (lockWith {
-          version = 0;
+          version = 1;
         })
       );
     assert
       !evaluates (
         appWithLock (lockWith {
-          inputsHash = "0";
+          wrapsHash = "0";
+        })
+      );
+    assert evaluates (
+      appWithLock (lockWith {
+        definitionHash = "0";
+      })
+    );
+    assert
+      !evaluates (
+        appWithLock (
+          builtins.toFile "meson-purifier.lock.json" (
+            builtins.toJSON (builtins.removeAttrs fixtureLock [ "outputs" ])
+          )
+        )
+      );
+    assert
+      !evaluates (
+        appWithLock (lockWith {
+          artifacts = [
+            {
+              path = "x.tar.gz";
+              mirrors = [ ];
+              hash = lib.fakeHash;
+            }
+          ];
         })
       );
     assert
@@ -109,4 +136,26 @@ in
         })
       );
     runCommand "lock-checks" { } "touch $out";
+
+  # A lockfile without the zlib downloads, as after a hand edit, fails the
+  # build at configure time, with a hint to relock.
+  missing-download =
+    let
+      withoutZlib = lockWith {
+        artifacts = builtins.filter (entry: !(lib.hasPrefix "zlib" entry.path)) fixtureLock.artifacts;
+      };
+      failure = pkgs'.testers.testBuildFailure (
+        pkgs'.buildMesonProject {
+          pname = "purifier-fixture";
+          version = "1.0.0";
+          src = ./fixtures/app;
+          lockFile = withoutZlib;
+        }
+      );
+    in
+    runCommand "missing-download" { } ''
+      grep -q 'Automatic wrap-based subproject downloading is disabled' ${failure}/testBuildFailure.log
+      grep -q 'Run `meson-purifier lock`' ${failure}/testBuildFailure.log
+      touch $out
+    '';
 }

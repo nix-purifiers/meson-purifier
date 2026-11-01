@@ -88,12 +88,19 @@ the options nixpkgs' Meson setup hook passes and the arguments given after
   evaluation time.
 
 The lockfile records the setup arguments, and the builder passes them to
-Meson ahead of `mesonFlags`. It also records a hash of the wrap files,
-`wrapdb.json`, `Cargo.lock` and the project's `meson.build` and option
-files. When one of them changed since the lockfile was written, the builder
-and the interactive commands refuse to run until `meson-purifier lock`
-renews it. Wrap files that only redirect to a wrap a subproject carries are
-left out of the hash, because Meson writes them itself while it configures.
+Meson ahead of `mesonFlags`. It also records two hashes:
+
+- **`wrapsHash`** covers the wrap files, `wrapdb.json` and `Cargo.lock`,
+  which decide what the lock run downloads. When one of them changed since
+  the lockfile was written, a download may be missing, so the builder fails
+  at evaluation time and the interactive commands that need the downloads
+  refuse to run, until `meson-purifier lock` renews the lockfile. Wrap files
+  that only redirect to a wrap a subproject carries are left out, because
+  Meson writes them itself while it configures.
+- **`definitionHash`** covers the project's `meson.build` and option
+  files, which decide the outputs. When one of them changed, the downloads
+  are still current, so interactive commands go on and the builder only
+  warns that the recorded targets may be out of date.
 
 ## Use
 
@@ -171,12 +178,32 @@ cache of the lockfile through Nix, under a GC root in
 `.meson-purifier/package-cache` in the project, and runs the real Meson with
 `MESON_PACKAGE_CACHE_DIR` pointing at it. `meson setup` also gets
 `--wrap-mode=nodownload`. A project without a lockfile runs Meson as it
-is.
+is. Editors and language servers read the build directory as usual:
+`compile_commands.json` points into the subprojects Meson extracted from
+the package cache, so clangd works offline.
+
+`meson wrap` and `meson subprojects` (other than `download`) run as they
+are, without the lockfile, because they are how a dependency is added or
+upgraded. To add one, run `meson wrap install <name>`, or write the wrap
+file, then `meson-purifier lock`, and go on with `meson setup`.
 
 `meson-purifier download` extracts every subproject of the main project
 into the subproject directory, offline, the way `meson subprojects
 download` does with the network. `meson-purifier realize` builds the
 package cache and prints its path.
+
+## When something is wrong
+
+Every error below names what went wrong and tells you to run
+`meson-purifier lock`.
+
+| Situation | Where it shows |
+|---|---|
+| A wrap file changed after the lock run | interactive commands refuse to run; the builder fails at evaluation time |
+| The lockfile lacks a download, as after a hand edit | Meson stops at that subproject, and meson-purifier explains why, interactively and in the Nix build |
+| A hash in the lockfile was edited, or an upstream file changed | Nix reports a hash mismatch, and meson-purifier says what it means |
+| The lockfile has merge conflict markers or lacks a field | interactive commands and the builder name the problem |
+| The lockfile has another format version | interactive commands and the builder name both versions |
 
 ## Decisions
 
