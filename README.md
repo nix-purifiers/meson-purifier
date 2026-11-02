@@ -364,10 +364,5 @@ to the builder:
 
 ## Credits
 
-meson-purifier follows sbt-nix-backend, the first of the nix-purifiers: the
-tool keeps planning the build, a lock run records what the tool downloads,
-Nix builds from the lockfile, and the interactive tool reads the same locked
-downloads. The purifier idea was inspired by nixcloud's
-[cargo (libnix)](https://github.com/nixcloud/cargo). The package cache is a
-`tree` of the [purifier](https://github.com/nix-purifiers/purifier)
-library.
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
