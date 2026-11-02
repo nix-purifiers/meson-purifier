@@ -276,7 +276,8 @@ command tables rizin ships, so the lock run needs no PyYAML:
 git clone --branch v0.8.2 https://github.com/rizinorg/rizin
 cd rizin
 nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
-  -c nix run github:nix-purifiers/meson-purifier -- lock . -- \
+  'github:nix-purifiers/meson-purifier'
+meson-purifier lock . -- \
     -Dregenerate_cmds=disabled
 ```
 
@@ -310,8 +311,8 @@ flake:
 
 ```zsh
 nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
-  -c nix run github:nix-purifiers/meson-purifier -- \
-  lock --lockfile ../my-packages/rizin.lock.json . -- \
+  'github:nix-purifiers/meson-purifier'
+meson-purifier lock --lockfile ../my-packages/rizin.lock.json . -- \
     -Dregenerate_cmds=disabled
 ```
 
