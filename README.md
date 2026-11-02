@@ -97,7 +97,8 @@ and the toolchain:
 
 ```nix
 {
-  inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
+  inputs.meson-purifier.url =
+    "github:nix-purifiers/meson-purifier";
   inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
 
   outputs =
@@ -321,7 +322,8 @@ to the builder:
 
 ```nix
 {
-  inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
+  inputs.meson-purifier.url =
+    "github:nix-purifiers/meson-purifier";
   inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
   inputs.rizin = {
     url = "github:rizinorg/rizin/v0.8.2";
