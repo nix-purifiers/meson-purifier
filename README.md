@@ -111,7 +111,8 @@ and the toolchain:
   inputs.meson-purifier.url = "github:nix-purifiers/meson-purifier";
   inputs.nixpkgs.follows = "meson-purifier/nixpkgs";
 
-  outputs = { nixpkgs, meson-purifier, ... }:
+  outputs =
+    { nixpkgs, meson-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -171,19 +172,18 @@ For an ad hoc build, the builder can also be evaluated directly from the
 project root. Replace the example package name with one from your project:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.meson-purifier.buildMesonProject {
-    pname = "hello";
-    version = "1.0";
-    src = ./.;
-  }).packages.hello'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.meson-purifier.buildMesonProject {
+  pname = "hello";
+  version = "1.0";
+  src = ./.;
+}).packages.hello'
 ```
 
 This uses the purifier's pinned nixpkgs, matching the lock command above.
@@ -287,26 +287,26 @@ command tables rizin ships, so the lock run needs no PyYAML:
 git clone --branch v0.8.2 https://github.com/rizinorg/rizin
 cd rizin
 nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
-  -c nix run github:nix-purifiers/meson-purifier -- lock . -- -Dregenerate_cmds=disabled
+  -c nix run github:nix-purifiers/meson-purifier -- lock . -- \
+    -Dregenerate_cmds=disabled
 ```
 
 Then build rizin from the same directory, which adds no Nix file to the
 checkout:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.meson-purifier.buildMesonProject {
-    pname = "rizin";
-    version = "0.8.2";
-    src = ./.;
-  }).packages.rizin'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/meson-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.meson-purifier.buildMesonProject {
+  pname = "rizin";
+  version = "0.8.2";
+  src = ./.;
+}).packages.rizin'
 ./result/bin/rizin -v
 ```
 
@@ -322,7 +322,8 @@ flake:
 ```zsh
 nix shell 'nixpkgs#gcc' 'nixpkgs#pkg-config' 'nixpkgs#python3' \
   -c nix run github:nix-purifiers/meson-purifier -- \
-  lock --lockfile ../my-packages/rizin.lock.json . -- -Dregenerate_cmds=disabled
+  lock --lockfile ../my-packages/rizin.lock.json . -- \
+    -Dregenerate_cmds=disabled
 ```
 
 Then take rizin as a flake input that is not a flake, and pass the lockfile
@@ -337,7 +338,13 @@ to the builder:
     flake = false;
   };
 
-  outputs = { nixpkgs, meson-purifier, rizin, ... }:
+  outputs =
+    {
+      nixpkgs,
+      meson-purifier,
+      rizin,
+      ...
+    }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -346,12 +353,13 @@ to the builder:
       };
     in
     {
-      packages.${system} = (pkgs.meson-purifier.buildMesonProject {
-        pname = "rizin";
-        version = "0.8.2";
-        src = rizin;
-        lockFile = ./rizin.lock.json;
-      }).packages;
+      packages.${system} =
+        (pkgs.meson-purifier.buildMesonProject {
+          pname = "rizin";
+          version = "0.8.2";
+          src = rizin;
+          lockFile = ./rizin.lock.json;
+        }).packages;
     };
 }
 ```
