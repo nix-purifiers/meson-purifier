@@ -35,7 +35,7 @@ For persistent use, add these packages through your usual Nix configuration.
 
 ## Development loop
 
-`nix develop github:nix-purifiers/meson-purifier` gives a shell with the
+`nix shell 'github:nix-purifiers/meson-purifier'` gives a shell with the
 flake's `meson`, `ninja` and `meson-purifier`. Run Meson as usual:
 
 ```zsh
