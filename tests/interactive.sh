@@ -53,7 +53,8 @@ online() {
 
 # A hash changed by hand no longer matches the contentHash of the lockfile.
 copy tampered
-sed -i 's|"sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="|"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' meson-purifier.lock.json
+sed 's|"sha256-jnMGOncnH+ffgtyNzA8tZPtxPCR/yq9jmPsJZE4BhXo="|"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' meson-purifier.lock.json >"$work/lock"
+mv "$work/lock" meson-purifier.lock.json
 fails_with 'edited by hand' meson-purifier prefetch
 
 # The package cache comes from the Nix store; build it while the network is
@@ -116,7 +117,12 @@ fails_with 'does not hold' meson setup build "$fallbacks"
 
 # A lockfile left with merge conflict markers.
 copy conflict
-sed -i '2i <<<<<<< HEAD' meson-purifier.lock.json
+{
+  head -n 1 meson-purifier.lock.json
+  echo '<<<<<<< HEAD'
+  tail -n +2 meson-purifier.lock.json
+} >"$work/lock"
+mv "$work/lock" meson-purifier.lock.json
 fails_with 'not valid JSON' meson setup build "$fallbacks"
 
 # The install step, in a fresh copy: every locked subproject of the main

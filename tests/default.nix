@@ -112,8 +112,21 @@ let
     # keeps it.
     lockFile = ./real-world/rizin.lock.json;
   };
+
+  # The lockfiles of these checks record the files a Linux install gives,
+  # such as lib/libz.so, lib/libz.so.1 and lib/libz.so.1.3.2, where macOS
+  # installs lib/libz.dylib and lib/libz.1.dylib, so the builder's check of
+  # the installed files fails there. A lockfile holds the outputs of one
+  # platform, so these checks run on Linux only.
+  linuxLocked = [
+    "conformance-external"
+    "fixture-app"
+    "fixture-tests"
+    "fixture-packages"
+    "real-world-rizin"
+  ];
 in
-{
+lib.filterAttrs (name: _: pkgs.stdenv.hostPlatform.isLinux || !builtins.elem name linuxLocked) {
   # A lockfile older than the wrap files fails at evaluation, and in the
   # command with a message that names `meson-purifier lock`.
   conformance-stale =

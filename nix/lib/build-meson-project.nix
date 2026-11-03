@@ -139,6 +139,17 @@ let
     fi
   '') installedWraps;
 
+  # The ranlib of darwin, cctools' libtool, writes the ids of the build user
+  # into the symbol table of an archive, and a darwin build runs as whichever
+  # build user is free. The strip hook of the fixup runs RANLIB on every
+  # installed archive; with -D it writes zeros, as the archiver of Meson's
+  # static link already does.
+  deterministicRanlib = ''
+    printf '#!%s\nexec %q -D "$@"\n' "$BASH" "$(command -v "$RANLIB")" > "$NIX_BUILD_TOP/meson-purifier-ranlib"
+    chmod +x "$NIX_BUILD_TOP/meson-purifier-ranlib"
+    export RANLIB=$NIX_BUILD_TOP/meson-purifier-ranlib
+  '';
+
   checkOutputs = ''
     for file in ${lib.escapeShellArgs lock.meson.files}; do
       if [ ! -e "$out/$file" ] && [ ! -L "$out/$file" ]; then
@@ -172,6 +183,9 @@ let
     common
     // {
       postInstall = args.postInstall or "" + checkOutputs;
+    }
+    // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
+      preFixup = deterministicRanlib + args.preFixup or "";
     }
   );
 
