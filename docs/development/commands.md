@@ -9,7 +9,7 @@ All from the repository root.
 # tests, and formatting
 nix flake check
 
-# Evaluate the checks for aarch64-linux as well
+# Evaluate the checks for the other systems as well
 nix flake check --all-systems --no-build
 
 # The conformance checks that need Nix or the network, and so run outside
