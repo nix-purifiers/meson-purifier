@@ -356,6 +356,23 @@ to the builder:
 }
 ```
 
+## Native projections
+
+Installed `shared library` targets expose `projections.native`,
+`projections.python-ffi`, and `projections.java-ffi`. Each target package
+exports its selected library; `packages.all` and the builder result export
+all shared targets. Paths and types come from the native lock metadata.
+Static libraries and custom/runtime-module targets receive no FFI projection.
+
+The catalog records the producer identity, target system, absolute library
+paths, header and pkg-config directories. Runtime dependencies remain in the
+producer's Nix closure. Python consumers add the `python-ffi` view to
+`PYTHONPATH` and use `purifier_native.load("target-name")` with explicit ctypes
+signatures. Java consumers use catalog paths for FFM or `java-ffi/java.args`
+with existing JNI bindings. No bindings or foreign ABI are synthesized. The
+integration check calls a compiled C API from ordinary Python with a zlib
+runtime dependency; Java consumption of a Meson producer is not yet tested.
+
 ## Credits
 
 The purifier idea was inspired by nixcloud's

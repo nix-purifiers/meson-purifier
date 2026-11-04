@@ -127,6 +127,10 @@ let
   ];
 in
 lib.filterAttrs (name: _: pkgs.stdenv.hostPlatform.isLinux || !builtins.elem name linuxLocked) {
+  native-ffi = import ./native-ffi.nix {
+    pkgs = pkgs';
+    inherit buildMesonProject;
+  };
   # A lockfile older than the wrap files fails at evaluation, and in the
   # command with a message that names `meson-purifier lock`.
   conformance-stale =

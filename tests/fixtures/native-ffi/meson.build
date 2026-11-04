@@ -1,0 +1,6 @@
+project('purifier-ffi', 'c', version: '1.0.0')
+zlib = dependency('zlib')
+library = shared_library('proof', 'proof.c', dependencies: zlib, install: true)
+install_headers('proof.h')
+pkgconfig = import('pkgconfig')
+pkgconfig.generate(library, name: 'proof', description: 'Foreign consumer fixture')
