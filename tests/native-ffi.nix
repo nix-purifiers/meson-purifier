@@ -2,39 +2,11 @@
 { pkgs, buildMesonProject }:
 let
   src = ./fixtures/native-ffi;
-  hashes = import ../nix/lib/inputs-hash.nix {
-    project = src;
-    subprojectsDir = "subprojects";
-  };
-  body = {
-    version = 3;
-    subprojectsDir = "subprojects";
-    wrapsHash = hashes.wraps;
-    definitionHash = hashes.definition;
-    setupArgs = [ "--libdir=lib" ];
-    installedWraps = [ ];
-    wrapFiles = [ ];
-    artifacts = [ ];
-    outputs = {
-      files = [
-        "lib/libproof${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}"
-        "include/proof.h"
-        "lib/pkgconfig/proof.pc"
-      ];
-      targets.proof = {
-        type = "shared library";
-        files = [ "lib/libproof${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}" ];
-      };
-    };
-  };
-  lockFile = pkgs.writeText "meson-purifier.lock.json" (
-    builtins.toJSON (
-      body
-      // {
-        contentHash = builtins.hashString "sha256" (builtins.toJSON body);
-      }
-    )
-  );
+  lockFile =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      ./fixtures/native-ffi/darwin.lock.json
+    else
+      ./fixtures/native-ffi/linux.lock.json;
   built = buildMesonProject {
     inherit src lockFile;
     pname = "ffi";

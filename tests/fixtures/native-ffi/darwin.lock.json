@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "subprojectsDir": "subprojects",
+  "wrapsHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "definitionHash": "c7257d64aaa1fa1b4e957d248b8ec5504738489eb5bf0525143ea13e53e5e8e7",
+  "setupArgs": [
+    "--libdir=lib"
+  ],
+  "installedWraps": [],
+  "wrapFiles": [],
+  "artifacts": [],
+  "outputs": {
+    "files": [
+      "lib/libproof.dylib",
+      "include/proof.h",
+      "lib/pkgconfig/proof.pc"
+    ],
+    "targets": {
+      "proof": {
+        "type": "shared library",
+        "files": [
+          "lib/libproof.dylib"
+        ]
+      }
+    }
+  },
+  "contentHash": "33a7cea71ba19baefe6695ee35e0dd44c83bbfa4e5cb33e616a20f38dab6415c"
+}
