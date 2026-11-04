@@ -183,6 +183,9 @@ let
     common
     // {
       postInstall = args.postInstall or "" + checkOutputs;
+      passthru = args.passthru or { } // {
+        inherit projections;
+      };
     }
     // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
       preFixup = deterministicRanlib + args.preFixup or "";
@@ -230,7 +233,16 @@ let
     name: target:
     runCommand name
       {
-        passthru.package = all;
+        passthru = {
+          package = all;
+          projections = purifierLib.nativeTargetProjections {
+            producer = all;
+            targets.${name} = target;
+            installedFiles = lock.meson.files;
+            system = stdenv.hostPlatform.system;
+            inherit runCommand python3;
+          };
+        };
         meta =
           lib.optionalAttrs (target.type == "executable" && target.files != [ ]) {
             mainProgram = baseNameOf (builtins.head target.files);
@@ -247,6 +259,13 @@ let
       );
 
   targets = lib.mapAttrs mkTarget lock.outputs;
+  projections = purifierLib.nativeTargetProjections {
+    producer = all;
+    targets = lock.outputs;
+    installedFiles = lock.meson.files;
+    system = stdenv.hostPlatform.system;
+    inherit runCommand python3;
+  };
 in
 assert
   !(targets ? all)
@@ -259,6 +278,7 @@ checkDefinition {
     tests
     release
     packageCache
+    projections
     ;
   fetches = lock.entries;
   lockedOutputs = {
