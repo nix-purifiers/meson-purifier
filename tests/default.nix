@@ -127,6 +127,10 @@ let
   ];
 in
 lib.filterAttrs (name: _: pkgs.stdenv.hostPlatform.isLinux || !builtins.elem name linuxLocked) {
+  resource-schema = import ./resource-schema.nix {
+    inherit pkgs;
+    build = buildMesonProject;
+  };
   native-ffi = import ./native-ffi.nix {
     pkgs = pkgs';
     inherit buildMesonProject;

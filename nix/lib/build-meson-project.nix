@@ -75,6 +75,9 @@
 {
   src,
   fetchers ? { },
+  resourceRoots ? { },
+  resourceDependencies ? [ ],
+  resourceSchema ? null,
   lockFile ? src + "/meson-purifier.lock.json",
   ...
 }@args:
@@ -161,6 +164,9 @@ let
 
   derivationArgs = builtins.removeAttrs args [
     "fetchers"
+    "resourceRoots"
+    "resourceDependencies"
+    "resourceSchema"
     "lockFile"
   ];
 
@@ -259,13 +265,23 @@ let
       );
 
   targets = lib.mapAttrs mkTarget lock.outputs;
-  projections = purifierLib.nativeTargetProjections {
-    producer = all;
-    targets = lock.outputs;
-    installedFiles = lock.meson.files;
-    system = stdenv.hostPlatform.system;
-    inherit runCommand python3;
-  };
+  projections =
+    (purifierLib.nativeTargetProjections {
+      producer = all;
+      targets = lock.outputs;
+      installedFiles = lock.meson.files;
+      system = stdenv.hostPlatform.system;
+      inherit runCommand python3;
+    })
+    // lib.optionalAttrs (resourceRoots != { }) (
+      purifierLib.resourceProjections {
+        producer = all;
+        roots = resourceRoots;
+        dependencies = resourceDependencies;
+        schema = resourceSchema;
+        inherit runCommand python3;
+      }
+    );
 in
 assert
   !(targets ? all)
