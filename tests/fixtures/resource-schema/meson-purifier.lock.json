@@ -1,0 +1,21 @@
+{
+  "version": 3,
+  "subprojectsDir": "subprojects",
+  "wrapsHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "definitionHash": "592fae7923442a9d5b68e8092bab145278179572fecbc13c4532d48771cca1b9",
+  "setupArgs": [
+    "--libdir=lib"
+  ],
+  "installedWraps": [],
+  "wrapFiles": [],
+  "artifacts": [],
+  "outputs": {
+    "files": [
+      "share/schemas/common/value.thrift",
+      "share/schemas/main.thrift",
+      "share/private.txt"
+    ],
+    "targets": {}
+  },
+  "contentHash": "652d8a6b3c5f183c9b07a278b13d0f8d682be2c7078ac9ae94e65eafe9d7466b"
+}

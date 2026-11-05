@@ -373,6 +373,32 @@ with existing JNI bindings. No bindings or foreign ABI are synthesized. The
 integration check calls a compiled C API from ordinary Python with a zlib
 runtime dependency; Java consumption of a Meson producer is not yet tested.
 
+## Installed resources and schema bundles
+
+Select installed public artifacts using `resourceRoots`, mapping public paths
+to paths relative to the installation prefix. For example:
+
+```nix
+resourceRoots."." = "share/schemas";
+resourceSchema = { format = "thrift"; entrypoints = [ "main.thrift" ]; };
+```
+
+The build result exposes `projections.resources`, `web`, and `java-resources`
+alongside its existing native-library projections. The full installed package
+exposes the same views. Use `.directory` as a compiler include root,
+`.documentRoot` for static serving, and `.classPath` for Java resources at their
+native paths. `resourceDependencies` can contribute other resource bundles;
+collisions fail. Empty/default selections produce no resource projection.
+
+Optional `resourceSchema` records native format and entrypoints. Select the
+complete import/include tree; the adapter does not parse schemas or manufacture
+language bindings. Existing project downloads and compiler/runtime choices stay
+in their native inputs. A Thrift fixture installs a schema with a separate
+included schema, compiles the projected tree with ordinary Thrift, round-trips a
+message with its pinned Python runtime, and checks every selected resource over
+HTTP and Java. Private installed siblings are excluded. Other formats may use
+this resource mechanism but need their own native compiler/runtime validation.
+
 ## Credits
 
 The purifier idea was inspired by nixcloud's
