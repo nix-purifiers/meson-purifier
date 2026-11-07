@@ -39,26 +39,28 @@ jobs:
           - runner: macos-15
             system: aarch64-darwin
     runs-on: ${{ matrix.runner }}
-    env:
-      TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
           extra_nix_config: sandbox = true
       - name: Lock, prefetch, ordinary Meson, and sandboxed runtime
+        env:
+          TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
         run: |
           test "$(nix eval --raw --impure --expr builtins.currentSystem)" = '${{ matrix.system }}'
           test "$(nix config show sandbox)" = true
           nix develop .#tier2 -c bash tests/tier2.sh
       - name: Independent pinned Rizin runtime
+        env:
+          TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
         run: nix develop .#tier2 -c bash tests/tier2-rizin.sh
       - name: Preserve exact locks and tool versions
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: meson-runtime-${{ matrix.system }}
-          path: ${{ env.TIER2_EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/meson-tier2-evidence
           if-no-files-found: error
 
   flake-check:
