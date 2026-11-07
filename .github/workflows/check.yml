@@ -99,6 +99,8 @@ jobs:
           path: receipts/two
       - name: Strict whole-output NAR equality from two native normal builds
         run: |
+          nix config show sandbox > canonical-sandbox.txt
+          test "$(cat canonical-sandbox.txt)" = true
           nix build --impure --option sandbox true --option allow-import-from-derivation false \
             --file tests/compare-repro.nix --argstr repository "$PWD" \
             --argstr first "$PWD/receipts/one" --argstr second "$PWD/receipts/two" \
@@ -109,7 +111,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: meson-canonical-darwin-comparison
-          path: canonical-*.json
+          path: |
+            canonical-*.json
+            canonical-sandbox.txt
           if-no-files-found: error
 
   flake-check:
