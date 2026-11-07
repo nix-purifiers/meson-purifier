@@ -24,6 +24,10 @@ let
   };
   built = pkgs.meson-purifier.buildMesonProject {
     inherit pname version;
+    # Evidence must compile this target locally; dependency substitutions
+    # remain available. This does not change the public builder defaults.
+    allowSubstitutes = false;
+    preferLocalBuild = true;
     src = builtins.path {
       path = builtins.toPath project;
       name = "source";
