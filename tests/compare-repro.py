@@ -67,7 +67,11 @@ def compare(first, second):
     for key in ["runId", "runAttempt", "nixVersion"]:
         if not a["context"][key] or a["context"][key] != b["context"][key]:
             raise ValueError(f"different or missing {key}")
-    for key in ["runnerName", "replica"]:
+    # Runner names need not be unique. Matrix indices identify separate
+    # jobs; each also asserted absence of the same canonical output.
+    if not a["context"]["runnerName"] or not b["context"]["runnerName"]:
+        raise ValueError("missing native runner identity")
+    for key in ["jobIndex", "replica"]:
         if (
             not a["context"][key]
             or not b["context"][key]
