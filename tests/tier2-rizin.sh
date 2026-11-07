@@ -3,6 +3,8 @@
 # A real upstream consumer, using a fresh platform-specific output lock.
 set -euo pipefail
 repository=$(cd "$(dirname "$0")/.." && pwd)
+sandbox_setting=$(nix config show sandbox)
+test "$sandbox_setting" = true
 work=$(mktemp -d)
 trap 'chmod -R u+w "$work"; rm -rf "$work"' EXIT
 source=$(nix eval --impure --raw --expr 'builtins.fetchTarball {
@@ -30,13 +32,15 @@ meson-purifier lock . -- -Dregenerate_cmds=disabled
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   mkdir -p "$TIER2_EVIDENCE_DIR"
   cp meson-purifier.lock.json "$TIER2_EVIDENCE_DIR/rizin.lock.json"
+  printf 'source=%s\nsandbox=%s\n' "$(git -C "$repository" rev-parse HEAD)" "$sandbox_setting" \
+    >"$TIER2_EVIDENCE_DIR/rizin-run.txt"
   printf '%s\n' 'rizin c3a90e9226d977f58f4e9c75f78fa6b07afe13c7 1sa4n832gzyjn5hmj2j26fgglw2nv8fwb402wifs1kj1qnrxnnsp' \
     'testbins 7f54b4970d413fe163f4f09dcfd9a328376133f0 1wy5ad59fax35a2mn1awmwx84sr4mafrp58cpmf1hswjn2kly3px' \
     >"$TIER2_EVIDENCE_DIR/rizin-sources.txt"
 fi
 cache=$(meson-purifier prefetch)
 test -d "$cache"
-nix build --impure --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
+nix build --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$PWD" \
   --argstr pname rizin --argstr version 0.9.1 \
   --out-link "$work/pure" --print-build-logs

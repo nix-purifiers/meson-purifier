@@ -10,6 +10,8 @@ cp -R "$repository/tests/fixtures/external" "$work/app"
 chmod -R u+w "$work/app"
 cd "$work/app"
 plain=${MESON_PURIFIER_PLAIN_MESON:?run in the tier2 dev shell}
+sandbox_setting=$(nix config show sandbox)
+test "$sandbox_setting" = true
 fallbacks=--force-fallback-for=zlib,inih
 python3 - <<'PY'
 from pathlib import Path
@@ -28,6 +30,7 @@ if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   cp meson-purifier.lock.json "$TIER2_EVIDENCE_DIR/fixture.lock.json"
   { git -C "$repository" rev-parse HEAD; uname -sm; meson --version; cc --version; } \
     >"$TIER2_EVIDENCE_DIR/versions.txt"
+  printf 'sandbox=%s\n' "$sandbox_setting" >>"$TIER2_EVIDENCE_DIR/versions.txt"
 fi
 cp -R . "$work/pure-source"
 cache=$(meson-purifier prefetch)
@@ -35,7 +38,7 @@ test -d "$cache"
 
 # Prime the pure derivation before disabling Nix substitution. Its build
 # is sandboxed; the following rebuild verifies it from those same inputs.
-nix build --impure --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
+nix build --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \
   --out-link "$work/pure" --print-build-logs
 "$work/pure/bin/external-fixture" | grep -qx 'external, zlib 1.3.2'
@@ -85,7 +88,7 @@ MESON_PACKAGE_CACHE_DIR="$cache/cache" "$plain" setup --reconfigure build \
 meson setup --reconfigure build "$fallbacks"
 meson compile -C build -j "${TIER2_JOBS:-2}"
 
-nix build --offline --rebuild --impure --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
+nix build --offline --rebuild --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \
   --argstr result tests \
   --out-link "$work/pure-after" --print-build-logs
