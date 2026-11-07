@@ -35,10 +35,46 @@ else
   pkgs.runCommand "meson-${pname}-runtime-evidence"
     {
       passthru = { inherit built; };
+      nativeBuildInputs = [
+        pkgs.meson
+        pkgs.ninja
+        pkgs.pkg-config
+        pkgs.stdenv.cc
+      ];
     }
     ''
       mkdir -p "$out"
       ln -s ${built.tests}/bin "$out/bin"
+      cp -R ${built.tests.src} ordinary
+      chmod -R u+w ordinary
+      cd ordinary
+      mkdir "$TMPDIR/empty-cache"
+      if MESON_PACKAGE_CACHE_DIR="$TMPDIR/empty-cache" meson setup missing \
+        --wrap-mode=nodownload ${
+          if pname == "rizin" then "-Dregenerate_cmds=disabled" else "--force-fallback-for=zlib,inih"
+        } \
+        >"$TMPDIR/missing.log" 2>&1; then
+        echo 'ordinary Meson configured without its dependency cache' >&2
+        exit 1
+      fi
+      grep -q 'Automatic wrap-based subproject downloading is disabled' "$TMPDIR/missing.log"
+      export MESON_PACKAGE_CACHE_DIR=${built.packageCache}/cache
+      meson setup build --wrap-mode=nodownload \
+        ${if pname == "rizin" then "-Dregenerate_cmds=disabled" else "--force-fallback-for=zlib,inih"}
+      ${
+        if pname == "rizin" then
+          ''
+            meson compile -C build rizin rz-asm
+            ./build/binrz/rizin/rizin -v | grep -q 'rizin 0.8.2'
+            test "$(echo 'mov eax, 1' | ./build/binrz/rz-asm/rz-asm -a x86 -b 32 -)" = b801000000
+          ''
+        else
+          ''
+            meson compile -C build
+            meson test -C build
+            ./build/external-fixture | grep -qx 'external, zlib 1.3.2'
+          ''
+      }
       ${
         if pname == "rizin" then
           ''
