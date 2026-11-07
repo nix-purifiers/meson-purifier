@@ -52,6 +52,7 @@ jobs:
           test "$(nix config show sandbox)" = true
           nix develop .#tier2 -c bash tests/tier2.sh
       - name: Independent pinned inih tests and installed-library consumer
+        if: ${{ !cancelled() }}
         env:
           TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
         run: nix develop .#tier2 -c bash tests/tier2-inih.sh

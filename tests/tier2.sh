@@ -88,10 +88,26 @@ MESON_PACKAGE_CACHE_DIR="$cache/cache" "$plain" setup --reconfigure build \
 meson setup --reconfigure build "$fallbacks"
 meson compile -C build -j "${TIER2_JOBS:-2}"
 
-nix build --offline --rebuild --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
+test_output=$(dirname "$(readlink "$work/pure/bin")")
+# Nix documents --keep-failed as retaining a differing output at .check:
+# https://nix.dev/manual/nix/2.30/advanced-topics/diff-hook.html
+if nix build --offline --rebuild --keep-failed --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \
   --argstr result tests \
-  --out-link "$work/pure-after" --print-build-logs
+  --out-link "$work/pure-after" --print-build-logs >"$work/rebuild.log" 2>&1; then
+  cat "$work/rebuild.log"
+else
+  rebuild_status=$?
+  cat "$work/rebuild.log"
+  if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
+    cp "$work/rebuild.log" "$TIER2_EVIDENCE_DIR/rebuild.log"
+    if ! python3 "$repository/tests/rebuild-diff.py" "$test_output" "$test_output.check" \
+      "$TIER2_EVIDENCE_DIR/rebuild-diff.json"; then
+      echo 'bounded rebuild diagnostics could not be collected' >&2
+    fi
+  fi
+  exit "$rebuild_status"
+fi
 "$work/pure-after/bin/external-fixture" | grep -qx 'external, zlib 1.3.2'
 
 # A changed dependency declaration must be refused, before resolution.
