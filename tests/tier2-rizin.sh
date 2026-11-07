@@ -20,6 +20,12 @@ corpus=$(nix eval --impure --raw --expr 'builtins.fetchTarball {
 cp -R "$corpus" "$work/rizin/test/bins"
 chmod -R u+w "$work/rizin/test/bins"
 cd "$work/rizin"
+# Use the fallback declared by the upstream wrap. Some development
+# networks cannot reach libzip.org; both URLs must yield this same hash.
+nix store prefetch-file --hash-type sha256 \
+  --expected-hash 82e9f2f2421f9d7c2466bbc3173cd09595a88ea37db0d559a9d0a2dc60dc722e \
+  --name libzip-1.11.4.tar.gz \
+  https://github.com/nih-at/libzip/releases/download/v1.11.4/libzip-1.11.4.tar.gz >/dev/null
 meson-purifier lock . -- -Dregenerate_cmds=disabled
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   mkdir -p "$TIER2_EVIDENCE_DIR"
