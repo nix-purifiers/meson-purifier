@@ -52,6 +52,17 @@ class CanonicalComparisonTest(unittest.TestCase):
                     }
                 },
                 "fixture.lock.json": {"contentHash": "locked"},
+                "fixture-tests-derivation.json": {
+                    "version": 4,
+                    "derivations": {
+                        Path(drv).name: {
+                            "system": "aarch64-darwin",
+                            "env": {"allowSubstitutes": "", "preferLocalBuild": "1"},
+                            "outputs": {"out": {"path": Path(output).name}},
+                            "inputs": {"drvs": {"meson-1.12.1.drv": {}}},
+                        }
+                    },
+                },
             }
             for directory in [a, b]:
                 directory.mkdir()
@@ -69,6 +80,9 @@ class CanonicalComparisonTest(unittest.TestCase):
 
             write_other()
             self.assertEqual(comparison.compare(a, b)["narSize"], 100)
+            other["fixture-context.json"]["runnerName"] = "runner-one"
+            write_other()
+            self.assertEqual(comparison.compare(a, b)["narSize"], 100)
             for file, key, value in [
                 ("fixture-context.json", "outputAbsentBeforeBuild", False),
                 ("fixture-context.json", "sandbox", False),
@@ -82,6 +96,14 @@ class CanonicalComparisonTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     comparison.compare(a, b)
                 other[file][key] = original
+            target = other["fixture-tests-derivation.json"]["derivations"][
+                Path(drv).name
+            ]
+            target["env"]["allowSubstitutes"] = "1"
+            write_other()
+            with self.assertRaisesRegex(ValueError, "actual local build"):
+                comparison.compare(a, b)
+            target["env"]["allowSubstitutes"] = ""
             other["fixture-tests-output.json"][output]["narHash"] = (
                 "sha256-" + base64.b64encode(b"b" * 32).decode()
             )
