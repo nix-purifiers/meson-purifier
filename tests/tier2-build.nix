@@ -65,7 +65,7 @@ else
         if pname == "rizin" then
           ''
             meson compile -C build rizin rz-asm
-            ./build/binrz/rizin/rizin -v | grep -q 'rizin 0.8.2'
+            ./build/binrz/rizin/rizin -v | grep -q 'rizin ${version}'
             test "$(echo 'mov eax, 1' | ./build/binrz/rz-asm/rz-asm -a x86 -b 32 -)" = b801000000
           ''
         else
@@ -78,7 +78,7 @@ else
       ${
         if pname == "rizin" then
           ''
-            "$out/bin/rizin" -v | grep -q 'rizin 0.8.2'
+            "$out/bin/rizin" -v | grep -q 'rizin ${version}'
             test "$(echo 'mov eax, 1' | "$out/bin/rz-asm" -a x86 -b 32 -)" = b801000000
           ''
         else
