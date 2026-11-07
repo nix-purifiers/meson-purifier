@@ -36,8 +36,16 @@ jobs:
         include:
           - runner: ubuntu-latest
             system: x86_64-linux
+            replica: one
+            repro-mode: in-place
           - runner: macos-15
             system: aarch64-darwin
+            replica: one
+            repro-mode: fresh-store
+          - runner: macos-15
+            system: aarch64-darwin
+            replica: two
+            repro-mode: fresh-store
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -47,6 +55,8 @@ jobs:
       - name: Lock, prefetch, ordinary Meson, and sandboxed runtime
         env:
           TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
+          TIER2_REPRO_MODE: ${{ matrix.repro-mode }}
+          TIER2_REPLICA: ${{ matrix.replica }}
         run: |
           test "$(nix eval --raw --impure --expr builtins.currentSystem)" = '${{ matrix.system }}'
           test "$(nix config show sandbox)" = true
@@ -56,12 +66,49 @@ jobs:
         env:
           TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
         run: nix develop .#tier2 -c bash tests/tier2-inih.sh
+      - name: Diagnostic Nix in-place rebuild on Darwin (failure retained)
+        if: ${{ !cancelled() && matrix.system == 'aarch64-darwin' && matrix.replica == 'one' }}
+        continue-on-error: true
+        env:
+          TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
+        run: nix develop .#tier2 -c bash tests/rebuild-probe.sh
       - name: Preserve exact locks and tool versions
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: meson-runtime-${{ matrix.system }}
+          name: meson-runtime-${{ matrix.system }}-${{ matrix.replica }}
           path: ${{ runner.temp }}/meson-tier2-evidence
+          if-no-files-found: error
+
+  canonical-darwin-reproducibility:
+    needs: portable-runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: sandbox = true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: meson-runtime-aarch64-darwin-one
+          path: receipts/one
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: meson-runtime-aarch64-darwin-two
+          path: receipts/two
+      - name: Strict whole-output NAR equality from two native normal builds
+        run: |
+          nix build --impure --option sandbox true --option allow-import-from-derivation false \
+            --file tests/compare-repro.nix --argstr repository "$PWD" \
+            --argstr first "$PWD/receipts/one" --argstr second "$PWD/receipts/two" \
+            --out-link canonical-repro --print-build-logs
+          nix path-info --json canonical-repro > canonical-output.json
+          nix derivation show canonical-repro > canonical-derivation.json
+          cp canonical-repro/result.json canonical-result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: meson-canonical-darwin-comparison
+          path: canonical-*.json
           if-no-files-found: error
 
   flake-check:
