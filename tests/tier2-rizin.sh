@@ -55,7 +55,7 @@ export http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9
 export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy ALL_PROXY=$http_proxy
 MESON_PACKAGE_CACHE_DIR="$cache/cache" "$MESON_PURIFIER_PLAIN_MESON" setup build \
   --wrap-mode=nodownload -Dregenerate_cmds=disabled
-meson compile -C build rizin rz-asm
+meson compile -C build -j "${TIER2_JOBS:-2}" rizin rz-asm
 ./build/binrz/rizin/rizin -v | grep -q 'rizin 0.9.1'
 test "$(echo 'mov eax, 1' | ./build/binrz/rz-asm/rz-asm -a x86 -b 32 -)" = b801000000
 echo "Rizin runtime passed on $(uname -sm)"
