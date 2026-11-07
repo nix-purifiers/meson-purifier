@@ -63,6 +63,7 @@ context = {
     'nixVersion': subprocess.check_output(['nix', '--version'], text=True).strip(),
     'runId': os.environ.get('GITHUB_RUN_ID'), 'runAttempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
     'runnerName': os.environ.get('RUNNER_NAME'), 'replica': os.environ.get('TIER2_REPLICA'),
+    'jobIndex': os.environ.get('TIER2_JOB_INDEX'),
 }
 json.dump(context, open(sys.argv[2], 'w'), indent=2)
 print('normal-build output absent before compilation:', absent, identity['output'])

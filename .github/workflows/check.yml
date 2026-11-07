@@ -57,6 +57,7 @@ jobs:
           TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
           TIER2_REPRO_MODE: ${{ matrix.repro-mode }}
           TIER2_REPLICA: ${{ matrix.replica }}
+          TIER2_JOB_INDEX: ${{ strategy.job-index }}
         run: |
           test "$(nix eval --raw --impure --expr builtins.currentSystem)" = '${{ matrix.system }}'
           test "$(nix config show sandbox)" = true

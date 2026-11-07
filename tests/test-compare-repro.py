@@ -32,6 +32,7 @@ class CanonicalComparisonTest(unittest.TestCase):
                     "nixVersion": "nix 2.35.2",
                     "runnerName": "runner-one",
                     "replica": "one",
+                    "jobIndex": "1",
                 },
                 "fixture-sdk.json": {
                     "system": "aarch64-darwin",
@@ -58,7 +59,9 @@ class CanonicalComparisonTest(unittest.TestCase):
                     (directory / name).write_text(json.dumps(value))
                 (directory / "versions.txt").write_text("a" * 40 + "\n")
             other = copy.deepcopy(data)
-            other["fixture-context.json"].update(runnerName="runner-two", replica="two")
+            other["fixture-context.json"].update(
+                runnerName="runner-two", replica="two", jobIndex="2"
+            )
 
             def write_other():
                 for name, value in other.items():
@@ -69,7 +72,7 @@ class CanonicalComparisonTest(unittest.TestCase):
             for file, key, value in [
                 ("fixture-context.json", "outputAbsentBeforeBuild", False),
                 ("fixture-context.json", "sandbox", False),
-                ("fixture-context.json", "runnerName", "runner-one"),
+                ("fixture-context.json", "jobIndex", "1"),
                 ("fixture-context.json", "runId", "different-run"),
                 ("fixture-sdk.json", "system", "x86_64-linux"),
             ]:
