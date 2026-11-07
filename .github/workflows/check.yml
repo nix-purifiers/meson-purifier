@@ -105,8 +105,8 @@ jobs:
             --file tests/compare-repro.nix --argstr repository "$PWD" \
             --argstr first "$PWD/receipts/one" --argstr second "$PWD/receipts/two" \
             --out-link canonical-repro --print-build-logs
-          nix path-info --json canonical-repro > canonical-output.json
-          nix derivation show canonical-repro > canonical-derivation.json
+          nix path-info --json ./canonical-repro > canonical-output.json
+          nix derivation show ./canonical-repro > canonical-derivation.json
           cp canonical-repro/result.json canonical-result.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
