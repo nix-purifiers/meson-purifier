@@ -23,6 +23,29 @@ def receipt(directory):
         raise ValueError("receipt is not the compiled fixture output")
     if info.get("deriver") != sdk["tests"]:
         raise ValueError("compiled output does not match executed tests derivation")
+
+    def canonical(path):
+        return path if path.startswith("/") else "/nix/store/" + path
+
+    definitions = read("fixture-tests-derivation.json")
+    definitions = definitions.get("derivations", definitions)
+    definitions = {canonical(path): value for path, value in definitions.items()}
+    definition = definitions[info["deriver"]]
+    attributes = definition["env"]
+    if attributes.get("__json"):
+        attributes = json.loads(attributes["__json"])
+    if attributes.get("allowSubstitutes") not in ("", False) or attributes.get(
+        "preferLocalBuild"
+    ) not in ("1", True):
+        raise ValueError("compiled target did not require an actual local build")
+    if (
+        definition["system"] != sdk["system"]
+        or canonical(definition["outputs"]["out"]["path"]) != output
+    ):
+        raise ValueError("compiled derivation identity disagrees with its output")
+    inputs = definition.get("inputs", {}).get("drvs", definition.get("inputDrvs", {}))
+    if sdk["meson"]["derivation"] not in {canonical(path) for path in inputs}:
+        raise ValueError("Meson SDK is not a dependency of the executed tests")
     if (
         context["expectedOutput"] != output
         or context["expectedDerivation"] != info["deriver"]
@@ -56,12 +79,13 @@ def receipt(directory):
         "info": info,
         "source": source,
         "lock": read("fixture.lock.json"),
+        "definition": definition,
     }
 
 
 def compare(first, second):
     a, b = receipt(first), receipt(second)
-    for key in ["source", "sdk", "output", "lock"]:
+    for key in ["source", "sdk", "output", "lock", "definition"]:
         if a[key] != b[key]:
             raise ValueError(f"different {key} across normal builds")
     for key in ["runId", "runAttempt", "nixVersion"]:
