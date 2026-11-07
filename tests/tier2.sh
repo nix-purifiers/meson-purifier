@@ -40,10 +40,14 @@ test -d "$cache"
 
 # Evaluation establishes only the expected identity and absence precondition.
 # The following normal build must compile and execute the target itself.
+TIER2_REPO_FOR_EVAL="$repository" TIER2_SOURCE_FOR_EVAL="$work/pure-source" \
 nix eval --impure --json --option allow-import-from-derivation false \
   --file "$repository/tests/tier2-build.nix" \
-  --argstr repository "$repository" --argstr project "$work/pure-source" \
-  --argstr result tests --apply 'd: { derivation = d.drvPath; output = d.outPath; }' \
+  --apply 'f: let d = f {
+    repository = builtins.getEnv "TIER2_REPO_FOR_EVAL";
+    project = builtins.getEnv "TIER2_SOURCE_FOR_EVAL";
+    result = "tests";
+  }; in { derivation = d.drvPath; output = d.outPath; }' \
   >"$work/expected-tests.json"
 python3 - "$work/expected-tests.json" "$work/context.json" "$repro_mode" "$sandbox_setting" <<'PY'
 import json, os, subprocess, sys
