@@ -40,7 +40,7 @@ nix build --impure --option allow-import-from-derivation false --file "$reposito
   --out-link "$work/pure" --print-build-logs
 "$work/pure/bin/external-fixture" | grep -qx 'external, zlib 1.3.2'
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
-  nix path-info --json --derivation "$work/pure" >"$TIER2_EVIDENCE_DIR/fixture-output.json"
+  nix path-info --json "$work/pure" >"$TIER2_EVIDENCE_DIR/fixture-output.json"
   nix derivation show "$work/pure" >"$TIER2_EVIDENCE_DIR/fixture-derivation.json"
   cp "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/fixture-sdk.json"
 fi
@@ -87,6 +87,7 @@ meson compile -C build
 
 nix build --offline --rebuild --impure --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \
+  --argstr result tests \
   --out-link "$work/pure-after" --print-build-logs
 "$work/pure-after/bin/external-fixture" | grep -qx 'external, zlib 1.3.2'
 
