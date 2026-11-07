@@ -51,10 +51,10 @@ jobs:
           test "$(nix eval --raw --impure --expr builtins.currentSystem)" = '${{ matrix.system }}'
           test "$(nix config show sandbox)" = true
           nix develop .#tier2 -c bash tests/tier2.sh
-      - name: Independent pinned Rizin runtime
+      - name: Independent pinned inih tests and installed-library consumer
         env:
           TIER2_EVIDENCE_DIR: ${{ runner.temp }}/meson-tier2-evidence
-        run: nix develop .#tier2 -c bash tests/tier2-rizin.sh
+        run: nix develop .#tier2 -c bash tests/tier2-inih.sh
       - name: Preserve exact locks and tool versions
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
