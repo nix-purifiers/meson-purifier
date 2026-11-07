@@ -68,7 +68,7 @@ PY
 # is sandboxed; the following rebuild verifies it from those same inputs.
 nix build --impure --option sandbox true --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \
-  --out-link "$work/pure" --print-build-logs
+  --out-link "$work/pure" --print-build-logs 2>&1 | tee "$work/normal-build.log"
 "$work/pure/bin/external-fixture" | grep -qx 'external, zlib 1.3.2'
 test_output=$(dirname "$(readlink "$work/pure/bin")")
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
@@ -77,6 +77,8 @@ if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   cp -f "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/fixture-sdk.json"
   cp "$work/context.json" "$TIER2_EVIDENCE_DIR/fixture-context.json"
   nix path-info --json --json-format 1 "$test_output" >"$TIER2_EVIDENCE_DIR/fixture-tests-output.json"
+  nix derivation show "$test_output" >"$TIER2_EVIDENCE_DIR/fixture-tests-derivation.json"
+  tail -c 4194304 "$work/normal-build.log" >"$TIER2_EVIDENCE_DIR/fixture-normal-build.log"
 fi
 
 # Nix substitution is disabled; Meson is explicitly nodownload. Closed proxies are an
