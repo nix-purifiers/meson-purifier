@@ -38,6 +38,14 @@
       devShells.default = pkgs.mkShell {
         packages = [ config.packages.toolchain ];
       };
+      devShells.tier2 = pkgs.mkShell {
+        packages = [
+          config.packages.toolchain
+          pkgs.pkg-config
+          pkgs.python3
+        ];
+        MESON_PURIFIER_PLAIN_MESON = "${pkgs.meson}/bin/meson";
+      };
     };
 
   partitionedAttrs.checks = "checks";
