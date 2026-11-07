@@ -67,12 +67,12 @@ fi
 grep -q 'Automatic wrap-based subproject downloading is disabled' "$work/missing-cache.log"
 MESON_PACKAGE_CACHE_DIR="$cache/cache" "$plain" setup \
   "$work/plain-build" "$work/plain-source" --wrap-mode=nodownload "$fallbacks"
-"$plain" compile -C "$work/plain-build"
+"$plain" compile -C "$work/plain-build" -j "${TIER2_JOBS:-2}"
 "$plain" test -C "$work/plain-build"
 "$work/plain-build/external-fixture" | grep -qx 'external, zlib 1.3.2'
 
 meson setup build "$fallbacks"
-meson compile -C build
+meson compile -C build -j "${TIER2_JOBS:-2}"
 meson test -C build
 ./build/external-fixture | grep -qx 'external, zlib 1.3.2'
 
@@ -80,10 +80,10 @@ meson test -C build
 # upstream Meson, with the exact cache the purifier prefetched.
 MESON_PACKAGE_CACHE_DIR="$cache/cache" "$plain" setup --reconfigure build \
   --wrap-mode=nodownload "$fallbacks"
-"$plain" compile -C build
+"$plain" compile -C build -j "${TIER2_JOBS:-2}"
 ./build/external-fixture | grep -qx 'external, zlib 1.3.2'
 meson setup --reconfigure build "$fallbacks"
-meson compile -C build
+meson compile -C build -j "${TIER2_JOBS:-2}"
 
 nix build --offline --rebuild --impure --option allow-import-from-derivation false --file "$repository/tests/tier2-build.nix" \
   --argstr repository "$repository" --argstr project "$work/pure-source" \

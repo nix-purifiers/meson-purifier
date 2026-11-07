@@ -64,13 +64,13 @@ else
       ${
         if pname == "rizin" then
           ''
-            meson compile -C build rizin rz-asm
+            meson compile -C build -j "$NIX_BUILD_CORES" rizin rz-asm
             ./build/binrz/rizin/rizin -v | grep -q 'rizin ${version}'
             test "$(echo 'mov eax, 1' | ./build/binrz/rz-asm/rz-asm -a x86 -b 32 -)" = b801000000
           ''
         else
           ''
-            meson compile -C build
+            meson compile -C build -j "$NIX_BUILD_CORES"
             meson test -C build
             ./build/external-fixture | grep -qx 'external, zlib 1.3.2'
           ''
