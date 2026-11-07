@@ -42,7 +42,7 @@ nix build --impure --option allow-import-from-derivation false --file "$reposito
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   nix path-info --json "$work/pure" >"$TIER2_EVIDENCE_DIR/fixture-output.json"
   nix derivation show "$work/pure" >"$TIER2_EVIDENCE_DIR/fixture-derivation.json"
-  cp "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/fixture-sdk.json"
+  cp -f "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/fixture-sdk.json"
 fi
 
 # Nix substitution is disabled; Meson is explicitly nodownload. Closed proxies are an

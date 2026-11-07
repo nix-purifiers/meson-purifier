@@ -39,7 +39,7 @@ test "$(echo 'mov eax, 1' | "$work/pure/bin/rz-asm" -a x86 -b 32 -)" = b80100000
 if [ -n "${TIER2_EVIDENCE_DIR:-}" ]; then
   nix path-info --json "$work/pure" >"$TIER2_EVIDENCE_DIR/rizin-output.json"
   nix derivation show "$work/pure" >"$TIER2_EVIDENCE_DIR/rizin-derivation.json"
-  cp "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/rizin-sdk.json"
+  cp -f "$work/pure/sdk.json" "$TIER2_EVIDENCE_DIR/rizin-sdk.json"
 fi
 export NIX_CONFIG="${NIX_CONFIG:-}
 substitute = false
