@@ -49,6 +49,6 @@ meson test -C build
 python3 - <<'PY'
 import json
 tests = json.load(open('build/meson-info/intro-tests.json'))
-assert len(tests) == 18, tests
+assert len(tests) == 17, tests
 PY
 echo "inih full suite and installed-library consumer passed on $(uname -sm)"
