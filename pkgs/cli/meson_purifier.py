@@ -119,7 +119,7 @@ def wraps_hash(
     project: Path, subprojects_dir: str, installed: frozenset = frozenset()
 ) -> str:
     """The hash of the files that decide what a lock run downloads;
-    nix/lib/inputs-hash.nix has the same rule.
+    lib-overlays/default/inputs-hash.nix has the same rule.
 
     They are the wrap files and wrapdb.json in the subproject directory, and
     a Cargo.lock at the project root, each as its name, a newline, its
@@ -153,7 +153,7 @@ def wraps_hash(
 
 def definition_hash(project: Path, subprojects_dir: str) -> str:
     """The hash of the build definition, which decides the outputs the lock
-    run records; nix/lib/inputs-hash.nix has the same rule.
+    run records; lib-overlays/default/inputs-hash.nix has the same rule.
 
     Each file of definition_files counts as its path, a newline, its
     contents and a newline, in byte order of the paths.
@@ -358,7 +358,7 @@ def lock_wrap(wrap, cache: Path, work: Path, artifacts: dict, wrap_file=None) ->
     records it.
 
     `wrap_file` names a wrap file of the project whose archives Nix reads
-    from the wrap file itself (nix/lib/wrap-file.nix); their entries carry
+    from the wrap file itself (lib-overlays/default/wrap-file.nix); their entries carry
     it as `wrapFile`, and the lockfile lists the wrap file instead of them.
     """
     from mesonbuild.wrap.wrap import WrapType

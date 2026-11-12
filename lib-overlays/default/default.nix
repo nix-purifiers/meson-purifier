@@ -4,7 +4,7 @@
 #
 #   readLock { src, lockFile ? ... }
 #     The lockfile and the wrap files of a project, read into the lock in
-#     memory of the purifier contract (nix/lib/read-lock.nix).
+#     memory of the purifier contract (lib-overlays/default/read-lock.nix).
 #
 # The builder needs a package set, so it is the package
 # `meson-purifier.buildMesonProject` in the scope that the default package
@@ -14,7 +14,7 @@
 
   overlay = final: prev: {
     meson-purifier = prev.meson-purifier or { } // {
-      readLock = import ../../nix/lib/read-lock.nix { lib = final; };
+      readLock = import ./read-lock.nix { lib = final; };
     };
   };
 

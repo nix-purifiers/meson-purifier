@@ -304,7 +304,7 @@ lib.filterAttrs (name: _: pkgs.stdenv.hostPlatform.isLinux || !builtins.elem nam
   # continuation lines.
   wrap-file-reader =
     let
-      read = import ../nix/lib/wrap-file.nix { inherit lib; } "t.wrap";
+      read = import ../lib-overlays/default/wrap-file.nix { inherit lib; } "t.wrap";
       digest = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23";
       entries = read (
         "; a comment\r\n[wrap-file]\r\n  # another\r\nDirectory = z\r\n"
