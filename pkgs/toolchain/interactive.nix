@@ -16,7 +16,7 @@
 let
   pkgs = import nixpkgs { inherit system; };
   purifierLib = import purifier { inherit (pkgs) lib; };
-  readLock = import ./read-lock.nix { inherit (pkgs) lib; };
+  readLock = import ../../lib-overlays/default/read-lock.nix { inherit (pkgs) lib; };
   lock = readLock {
     # A path, not a string: readLock reads wrap files from it without
     # copying the project to the store.
@@ -24,7 +24,7 @@ let
     inherit lockFile;
   };
 in
-import ./package-cache.nix {
+import ../build-meson-project/package-cache.nix {
   inherit purifierLib;
   entries = purifierLib.entriesFor system lock;
   packages = {

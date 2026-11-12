@@ -3,7 +3,7 @@
 # The default package overlay. It adds one attribute to the package set,
 # the scope `pkgs.meson-purifier` (made with lib.makeScope), which holds the
 # packages of pkgs/ (`cli`, `toolchain`) and the builder `buildMesonProject`
-# (nix/lib/build-meson-project.nix). A package written for callPackage
+# (pkgs/build-meson-project/default.nix). A package written for callPackage
 # takes the scope by name:
 #
 #   { meson-purifier }: (meson-purifier.buildMesonProject { ... }).packages.<name>
@@ -39,7 +39,7 @@ in
           toolchain = super.toolchain.override {
             purifierSource = closure-inputs.purifier.outPath;
           };
-          buildMesonProject = self.callPackage ../../nix/lib/build-meson-project.nix {
+          buildMesonProject = self.callPackage ../../pkgs/build-meson-project/default.nix {
             purifierLib = closure-lib.purifier;
             inherit (closure-lib.meson-purifier) readLock;
           };

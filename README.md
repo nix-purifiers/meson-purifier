@@ -231,7 +231,7 @@ records what the wrap files cannot say:
 | the outputs and the `meson setup` arguments | installed targets and files | they come from configuring the project |
 
 Wrap files are INI files, which Meson reads with Python's configparser.
-`nix/lib/wrap-file.nix` reads the part of the syntax wrap files use:
+`lib-overlays/default/wrap-file.nix` reads the part of the syntax wrap files use:
 sections, `key = value` and `key: value`, lowercased keys, full-line `#` and
 `;` comments, and indented continuation lines. Nix reads wrap files from a
 `src` that is a path, a flake input, or the result of `builtins.fetchTarball`

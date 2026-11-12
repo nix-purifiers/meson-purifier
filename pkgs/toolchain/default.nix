@@ -9,7 +9,7 @@
 # The tools a lock run uses (git, nix-prefetch-git, Mercurial and
 # Subversion) come from the end of PATH, so the user's own come first.
 # Interactive commands build the package cache with nix-build
-# (nix/lib/interactive.nix), from the nixpkgs of this package set and the
+# (pkgs/toolchain/interactive.nix), from the nixpkgs of this package set and the
 # library of the nix-purifiers. `purifierSource` is the source of that
 # library as the meson-purifier flake pins it, which the default package
 # overlay passes.
@@ -28,13 +28,21 @@
   purifierSource ? throw "meson-purifier: the toolchain needs `purifierSource`, which the default package overlay of the meson-purifier flake passes",
 }:
 let
+  runtimeSource = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ../../lib-overlays/default
+      ../build-meson-project
+      ./interactive.nix
+    ];
+  };
   wrapperArgs = lib.escapeShellArgs [
     "--set-default"
     "MESON_PURIFIER_MESON"
     "${meson}/bin/meson"
     "--set"
     "MESON_PURIFIER_NIX_LIB"
-    "${../../nix/lib}"
+    "${runtimeSource}/pkgs/toolchain"
     "--set-default"
     "MESON_PURIFIER_NIXPKGS"
     "${path}"
