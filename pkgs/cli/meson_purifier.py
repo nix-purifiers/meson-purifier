@@ -127,8 +127,8 @@ def wraps_hash(
     file are left out. The ones named in `installed` are the wraps the
     lockfile itself installs from wrapdb.json. A file that starts with
     [wrap-redirect] only selects a wrap that a subproject carries; Meson
-    writes one when it uses such a wrap, and the lock run locks every wrap
-    that a subproject carries.
+    writes one when it uses such a wrap. Wraps in downloaded subprojects are
+    locked recursively; vendored checkouts remain part of the source input.
     """
     directory = project / subprojects_dir
     data = b""
@@ -632,6 +632,20 @@ def lock(project: Path, setup_args: list) -> dict:
         resolver = Resolver(
             str(root), subprojects_dir, wrap_mode=WrapMode.nodownload, silent=True
         )
+        wrapped_directories = {
+            wrap.directory
+            for wrap in resolver.wraps.values()
+            if wrap.type is not None and not wrap.redirected
+        }
+        vendored_directories = (
+            {
+                path.name
+                for path in source_subprojects.iterdir()
+                if path.is_dir() and path.name not in wrapped_directories
+            }
+            if source_subprojects.is_dir()
+            else set()
+        )
         artifacts: dict = {}
         done: set = set()
 
@@ -648,6 +662,29 @@ def lock(project: Path, setup_args: list) -> dict:
                         # A directory in the subproject directory, without a
                         # wrap.
                         continue
+                    if wrap.redirected and wrap.directory in vendored_directories:
+                        # Generated aliases selecting source already vendored
+                        # at the root must not add downloads on relock. Nested
+                        # wraps owned by downloaded projects remain locked.
+                        origin = (
+                            Path(wrap.subprojects_dir)
+                            .relative_to(root / subprojects_dir)
+                            .parts
+                        )
+                        owner = origin[0] if origin else None
+                        buildfile = {
+                            "meson": "meson.build",
+                            "cmake": "CMakeLists.txt",
+                            "cargo": "Cargo.toml",
+                        }.get(wrap.values.get("method", "meson"))
+                        if (
+                            owner in vendored_directories
+                            and buildfile is not None
+                            and (
+                                source_subprojects / wrap.directory / buildfile
+                            ).is_file()
+                        ):
+                            continue
                     log(f"locking {wrap.name}")
                     lock_wrap(
                         wrap,

@@ -416,6 +416,50 @@ class LockRun(unittest.TestCase):
     """The lock loop on wraps whose archives the project carries, so that
     Meson extracts them without the network."""
 
+    def test_vendored_redirect_does_not_add_downloads_on_relock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            write(project / "meson.build", "project('root')\nsubproject('parent')\n")
+            write(
+                project / "subprojects/parent/meson.build",
+                "project('parent')\nsubproject('child')\n",
+            )
+            write(
+                project / "subprojects/parent/subprojects/child.wrap",
+                "[wrap-git]\nurl = file:///must-not-fetch-vendored-child\n"
+                "revision = 0123456789012345678901234567890123456789\n",
+            )
+            write(
+                project / "subprojects/child/meson.build",
+                "project('child')\ninstall_data('value.txt', install_dir: 'share')\n",
+            )
+            write(project / "subprojects/child/value.txt", "vendored source\n")
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            with (
+                mock.patch.object(mp, "real_meson", return_value=str(native)),
+                mock.patch.object(
+                    mp, "prefetch_git", side_effect=AssertionError("unexpected fetch")
+                ),
+            ):
+                first = mp.lock(project, ["--backend=none"])
+                mp.run(
+                    [native, "setup", "--backend=none", str(root / "build")],
+                    cwd=project,
+                    stdout=mp.subprocess.DEVNULL,
+                )
+                redirect = project / "subprojects/child.wrap"
+                self.assertTrue(redirect.read_bytes().startswith(mp.REDIRECT))
+                second = mp.lock(project, ["--backend=none"])
+            self.assertEqual(first, second)
+            self.assertEqual(first["artifacts"], [])
+            self.assertEqual(first["outputs"]["files"], ["share/value.txt"])
+
     def test_nested_wraps_are_promoted_and_locked(self):
         with tempfile.TemporaryDirectory() as d:
             project = Path(d) / "project"
@@ -464,10 +508,23 @@ class LockRun(unittest.TestCase):
                 mock.patch.object(mp, "configure_copy", lambda *args: ([], outputs)),
             ):
                 lock = mp.lock(project, ["-Dx=y"])
+                self.assertFalse((subprojects / "a-1.0").exists())
+                # Extracted downloaded projects must retain their nested
+                # artifact requirements when Meson has promoted their wraps.
+                mp.shutil.copytree(a_patch, subprojects / "a-1.0")
+                write(
+                    subprojects / "b.wrap",
+                    "[wrap-redirect]\nfilename = a-1.0/subprojects/b.wrap\n",
+                )
+                write(subprojects / "b-1.0/meson.build", "project('b', 'c')\n")
+                self.assertEqual(mp.lock(project, ["-Dx=y"]), lock)
 
             # a lies in the subproject directory, so Nix reads its archives
             # from a.wrap; b lies in the patch directory of a.
-            self.assertEqual(sorted(seen), [("a", "a.wrap"), ("b", None)])
+            self.assertEqual(
+                sorted(seen),
+                [("a", "a.wrap"), ("a", "a.wrap"), ("b", None), ("b", None)],
+            )
             self.assertEqual(lock["artifacts"], [])
             self.assertEqual(lock["outputs"], outputs)
             self.assertEqual(lock["setupArgs"], ["-Dx=y"])
@@ -475,8 +532,6 @@ class LockRun(unittest.TestCase):
             self.assertEqual(
                 lock["definitionHash"], mp.definition_hash(project, "subprojects")
             )
-            # The lock run extracts subprojects in a copy, not in the project.
-            self.assertFalse((subprojects / "a-1.0").exists())
 
     def test_wrap_files_replace_their_entries(self):
         with tempfile.TemporaryDirectory() as d:
