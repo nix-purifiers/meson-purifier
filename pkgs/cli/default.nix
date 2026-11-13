@@ -8,6 +8,7 @@
   stdenvNoCC,
   python3,
   meson,
+  git,
   makeWrapper,
 }:
 let
@@ -26,7 +27,10 @@ stdenvNoCC.mkDerivation {
   };
 
   nativeBuildInputs = [ makeWrapper ];
-  nativeCheckInputs = [ python3 ];
+  nativeCheckInputs = [
+    python3
+    git
+  ];
 
   dontConfigure = true;
   dontBuild = true;

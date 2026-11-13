@@ -532,6 +532,18 @@ def configure_copy(
         symlinks=True,
         ignore=shutil.ignore_patterns(".git", STATE_DIR, "packagecache"),
     )
+    # Preserve each checkout's identity, including submodules and linked
+    # worktrees, without copying their object databases into the build copy.
+    for directory, _, _ in os.walk(copy):
+        target = Path(directory)
+        original = project / target.relative_to(copy)
+        if (original / ".git").exists():
+            gitdir = run(
+                ["git", "-C", str(original), "rev-parse", "--absolute-git-dir"],
+                stdout=subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            (target / ".git").write_text("gitdir: " + gitdir + "\n")
     (copy / subprojects_dir).mkdir(parents=True, exist_ok=True)
     before = set(os.listdir(copy / subprojects_dir))
     # Meson checks out wrap-svn sources with svn, which reads its proxy from
