@@ -446,6 +446,224 @@ class LockRun(unittest.TestCase):
                 diagnostics.getvalue(),
             )
 
+    def test_linked_worktree_git_version_survives_configuration_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repository"
+            mp.run(["git", "init", "--quiet", str(repository)])
+            mp.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository),
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "fixture",
+                ]
+            )
+            project = root / "linked"
+            mp.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository),
+                    "worktree",
+                    "add",
+                    "--quiet",
+                    "--detach",
+                    str(project),
+                ]
+            )
+            expected = mp.run(
+                ["git", "-C", str(project), "rev-parse", "--short", "HEAD"],
+                stdout=mp.subprocess.PIPE,
+                text=True,
+            ).stdout.strip()
+            write(
+                project / "meson.build",
+                "project('git-version', version: "
+                "run_command('git', 'rev-parse', '--short', 'HEAD', check: true).stdout().strip())\n",
+            )
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            work = root / "work"
+            work.mkdir()
+            with mock.patch.object(mp, "real_meson", return_value=str(native)):
+                mp.configure_copy(
+                    project, "subprojects", work, root / "cache", ["--backend=none"]
+                )
+            info = mp.json.loads(
+                (work / "configure-build/meson-info/intro-projectinfo.json").read_text()
+            )
+            self.assertEqual(info["version"], expected)
+
+    def test_submodule_git_version_survives_configuration_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(repository, *arguments):
+                return mp.run(
+                    [
+                        "git",
+                        "-C",
+                        str(repository),
+                        "-c",
+                        "user.name=Fixture",
+                        "-c",
+                        "user.email=fixture@example.invalid",
+                        "-c",
+                        "commit.gpgsign=false",
+                        "-c",
+                        "tag.gpgsign=false",
+                        "-c",
+                        "core.hooksPath=/dev/null",
+                        *arguments,
+                    ],
+                    stdout=mp.subprocess.PIPE,
+                    text=True,
+                )
+
+            component = root / "component"
+            component.mkdir()
+            git(component, "init", "--quiet")
+            write(
+                component / "meson.build",
+                "project('component', version: run_command('git', '-C', "
+                "meson.current_source_dir(), 'describe', '--tags', '--always', "
+                "check: true).stdout().strip())\n",
+            )
+            git(component, "add", "meson.build")
+            git(component, "commit", "--quiet", "-m", "component")
+            git(component, "tag", "component-v1.2.3")
+            project = root / "project"
+            project.mkdir()
+            git(project, "init", "--quiet")
+            write(
+                project / "meson.build",
+                "project('outer')\nsubproject('component')\n",
+            )
+            git(
+                project,
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--quiet",
+                component.as_uri(),
+                "subprojects/component",
+            )
+            git(project, "add", ".")
+            git(project, "commit", "--quiet", "-m", "outer")
+            git(project, "tag", "outer-v9.8.7")
+            self.assertTrue((project / "subprojects/component/.git").is_file())
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            work = root / "work"
+            work.mkdir()
+            with mock.patch.object(mp, "real_meson", return_value=str(native)):
+                mp.configure_copy(
+                    project, "subprojects", work, root / "cache", ["--backend=none"]
+                )
+            info = mp.json.loads(
+                (work / "configure-build/meson-info/intro-projectinfo.json").read_text()
+            )
+            nested = next(x for x in info["subprojects"] if x["name"] == "component")
+            self.assertEqual(nested["version"], "component-v1.2.3")
+
+            # An archive root can also contain an independently checked-out
+            # component. Preserve that identity without inventing root Git data.
+            archive = root / "archive"
+            archive.mkdir()
+            write(archive / "meson.build", (project / "meson.build").read_text())
+            git(
+                component,
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                str(archive / "subprojects/component"),
+            )
+            archive_work = root / "archive-work"
+            archive_work.mkdir()
+            with mock.patch.object(mp, "real_meson", return_value=str(native)):
+                mp.configure_copy(
+                    archive,
+                    "subprojects",
+                    archive_work,
+                    root / "cache",
+                    ["--backend=none"],
+                )
+            self.assertFalse((archive_work / "configure/.git").exists())
+            info = mp.json.loads(
+                (
+                    archive_work / "configure-build/meson-info/intro-projectinfo.json"
+                ).read_text()
+            )
+            nested = next(x for x in info["subprojects"] if x["name"] == "component")
+            self.assertEqual(nested["version"], "component-v1.2.3")
+
+    def test_vendored_redirect_does_not_add_downloads_on_relock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            write(project / "meson.build", "project('root')\nsubproject('parent')\n")
+            write(
+                project / "subprojects/parent/meson.build",
+                "project('parent')\nsubproject('child')\n",
+            )
+            write(
+                project / "subprojects/parent/subprojects/child.wrap",
+                "[wrap-git]\nurl = file:///must-not-fetch-vendored-child\n"
+                "revision = 0123456789012345678901234567890123456789\n",
+            )
+            write(
+                project / "subprojects/child/meson.build",
+                "project('child')\ninstall_data('value.txt', install_dir: 'share')\n",
+            )
+            write(project / "subprojects/child/value.txt", "vendored source\n")
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            with (
+                mock.patch.object(mp, "real_meson", return_value=str(native)),
+                mock.patch.object(
+                    mp, "prefetch_git", side_effect=AssertionError("unexpected fetch")
+                ),
+            ):
+                first = mp.lock(project, ["--backend=none"])
+                mp.run(
+                    [native, "setup", "--backend=none", str(root / "build")],
+                    cwd=project,
+                    stdout=mp.subprocess.DEVNULL,
+                )
+                redirect = project / "subprojects/child.wrap"
+                self.assertTrue(redirect.read_bytes().startswith(mp.REDIRECT))
+                second = mp.lock(project, ["--backend=none"])
+            self.assertEqual(first, second)
+            self.assertEqual(first["artifacts"], [])
+            self.assertEqual(first["outputs"]["files"], ["share/value.txt"])
+
     def test_nested_wraps_are_promoted_and_locked(self):
         with tempfile.TemporaryDirectory() as d:
             project = Path(d) / "project"
