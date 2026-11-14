@@ -590,6 +590,50 @@ class LockRun(unittest.TestCase):
             nested = next(x for x in info["subprojects"] if x["name"] == "component")
             self.assertEqual(nested["version"], "component-v1.2.3")
 
+    def test_vendored_redirect_does_not_add_downloads_on_relock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            write(project / "meson.build", "project('root')\nsubproject('parent')\n")
+            write(
+                project / "subprojects/parent/meson.build",
+                "project('parent')\nsubproject('child')\n",
+            )
+            write(
+                project / "subprojects/parent/subprojects/child.wrap",
+                "[wrap-git]\nurl = file:///must-not-fetch-vendored-child\n"
+                "revision = 0123456789012345678901234567890123456789\n",
+            )
+            write(
+                project / "subprojects/child/meson.build",
+                "project('child')\ninstall_data('value.txt', install_dir: 'share')\n",
+            )
+            write(project / "subprojects/child/value.txt", "vendored source\n")
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            with (
+                mock.patch.object(mp, "real_meson", return_value=str(native)),
+                mock.patch.object(
+                    mp, "prefetch_git", side_effect=AssertionError("unexpected fetch")
+                ),
+            ):
+                first = mp.lock(project, ["--backend=none"])
+                mp.run(
+                    [native, "setup", "--backend=none", str(root / "build")],
+                    cwd=project,
+                    stdout=mp.subprocess.DEVNULL,
+                )
+                redirect = project / "subprojects/child.wrap"
+                self.assertTrue(redirect.read_bytes().startswith(mp.REDIRECT))
+                second = mp.lock(project, ["--backend=none"])
+            self.assertEqual(first, second)
+            self.assertEqual(first["artifacts"], [])
+            self.assertEqual(first["outputs"]["files"], ["share/value.txt"])
+
     def test_nested_wraps_are_promoted_and_locked(self):
         with tempfile.TemporaryDirectory() as d:
             project = Path(d) / "project"
