@@ -555,12 +555,28 @@ def configure_copy(
     prefix = work / "prefix"
     build = work / "configure-build"
     log("configuring a copy of the project to find its outputs")
-    run(
-        [real_meson(), "setup", *nixpkgs_setup_flags(prefix), *setup_args, str(build)],
-        cwd=copy,
-        env=env,
-        stdout=subprocess.DEVNULL,
-    )
+    # Keep successful captures quiet, but retain Meson's native explanation
+    # when a dependency or selected toolchain cannot configure the project.
+    with tempfile.TemporaryFile(
+        mode="w+", encoding="utf-8", errors="replace"
+    ) as output:
+        try:
+            run(
+                [
+                    real_meson(),
+                    "setup",
+                    *nixpkgs_setup_flags(prefix),
+                    *setup_args,
+                    str(build),
+                ],
+                cwd=copy,
+                env=env,
+                stdout=output,
+            )
+        except subprocess.CalledProcessError:
+            output.seek(0)
+            shutil.copyfileobj(output, sys.stderr)
+            raise
 
     installed = []
     wrapdb_file = project / subprojects_dir / "wrapdb.json"

@@ -416,6 +416,36 @@ class LockRun(unittest.TestCase):
     """The lock loop on wraps whose archives the project carries, so that
     Meson extracts them without the network."""
 
+    def test_failed_setup_preserves_native_meson_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            write(
+                project / "meson.build",
+                "project('native-error')\n"
+                "error('selected toolchain lacks a required project capability')\n",
+            )
+            native = root / "meson"
+            native.write_text(
+                "#!" + mp.sys.executable + "\n"
+                "from mesonbuild.mesonmain import main\nraise SystemExit(main())\n"
+            )
+            native.chmod(0o755)
+            work = root / "work"
+            work.mkdir()
+            diagnostics = io.StringIO()
+            with (
+                mock.patch.object(mp, "real_meson", return_value=str(native)),
+                mock.patch.object(mp.sys, "stderr", diagnostics),
+                self.assertRaises(mp.subprocess.CalledProcessError) as failure,
+            ):
+                mp.configure_copy(project, "subprojects", work, root / "cache", [])
+            self.assertEqual(failure.exception.returncode, 1)
+            self.assertIn(
+                "selected toolchain lacks a required project capability",
+                diagnostics.getvalue(),
+            )
+
     def test_linked_worktree_git_version_survives_configuration_copy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
